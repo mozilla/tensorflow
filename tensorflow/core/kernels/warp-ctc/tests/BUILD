@@ -18,13 +18,15 @@ load(
 
 cc_library(
     name = "ctc_cpu",
-    srcs = ["test_cpu.cpp", "test.h"],
+    srcs = ["test_cpu.cpp"],
+    hdrs = ["test.h"],
     deps = ["//tensorflow/core/kernels/warp-ctc/include:libcpu", "//tensorflow/core/kernels/warp-ctc/src:src_cpu"],
 )
 
 tf_kernel_library(
     name = "ctc_gpu",
-    gpu_srcs = ["test.h", "test_gpu.h"],
+    gpu_srcs = ["test_gpu.h"],
+    hdrs = ["test.h"],
     deps = ["//tensorflow/core/kernels/warp-ctc/include:libcpu", "//tensorflow/core/kernels/warp-ctc/src:src_gpu"],
     alwayslink = 1,
 )
