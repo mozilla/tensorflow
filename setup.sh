@@ -2,7 +2,9 @@
 
 set -ex
 
-PATH=$HOME/bin/:$PATH
+HOME_CLEAN=$(/usr/bin/realpath "${HOME}")
+
+PATH=${HOME_CLEAN}/bin/:$PATH
 export PATH
 
 install_cuda=
@@ -10,8 +12,8 @@ if [ "$1" = "--cuda" ]; then
     install_cuda=yes
 fi
 
-BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.3.2/bazel-0.3.2-installer-linux-x86_64.sh
-BAZEL_SHA256=2744447c9999ceea3dc0b90013dcdfbc3683ebb416eb45287c98049bb7a1c6a8
+BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.4.2/bazel-0.4.2-installer-linux-x86_64.sh
+BAZEL_SHA256=b76b62a8c0eead1fc2215699382f1608c7bb98529fc48c5e9ef3dfa1b8b7585e
 
 CUDA_URL=https://developer.nvidia.com/compute/cuda/8.0/prod/local_installers/cuda_8.0.44_linux-run
 CUDA_SHA256=64dc4ab867261a0d690735c46d7cc9fc60d989da0d69dc04d1714e409cacbdf0
@@ -25,7 +27,7 @@ download()
 {
     fname=`basename $1`
 
-    /usr/bin/wget $1 -O ~/dls/$fname && echo "$2  $HOME/dls/$fname" | sha256sum -c --strict -
+    /usr/bin/wget $1 -O ~/dls/$fname && echo "$2  ${HOME_CLEAN}/dls/$fname" | sha256sum -c --strict -
 }
 
 # Download stuff
@@ -54,13 +56,13 @@ if [ ! -z "${install_cuda}" ]; then
     mkdir -p ~/DeepSpeech/CUDA/ || true
     pushd ~
     CUDA_FILE=`basename ${CUDA_URL}`
-    PERL5LIB=. sh ~/dls/${CUDA_FILE} --silent --verbose --override --toolkit --toolkitpath=$HOME/DeepSpeech/CUDA/
+    PERL5LIB=. sh ~/dls/${CUDA_FILE} --silent --verbose --override --toolkit --toolkitpath=${HOME_CLEAN}/DeepSpeech/CUDA/
 
     CUDNN_FILE=`basename ${CUDNN_URL}`
-    tar xvf ~/dls/${CUDNN_FILE} --strip-components=1 -C $HOME/DeepSpeech/CUDA/
+    tar xvf ~/dls/${CUDNN_FILE} --strip-components=1 -C ${HOME_CLEAN}/DeepSpeech/CUDA/
     popd
 
-    LD_LIBRARY_PATH=$HOME/DeepSpeech/CUDA/lib64/:$LD_LIBRARY_PATH
+    LD_LIBRARY_PATH=${HOME_CLEAN}/DeepSpeech/CUDA/lib64/:$LD_LIBRARY_PATH
     export LD_LIBRARY_PATH
 
     ls -halR ~/DeepSpeech/CUDA/lib64/
