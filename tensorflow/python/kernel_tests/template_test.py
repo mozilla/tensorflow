@@ -26,24 +26,19 @@ from tensorflow.python.ops import template
 
 
 def var_scoped_function():
-  return tf.get_variable("dummy",
-                         shape=[1],
-                         initializer=tf.zeros_initializer)
+  return tf.get_variable("dummy", shape=[1], initializer=tf.zeros_initializer())
 
 
 def internally_var_scoped_function(scope_name):
   with tf.variable_scope(scope_name):
-    return tf.get_variable("dummy",
-                           shape=[1],
-                           initializer=tf.zeros_initializer)
+    return tf.get_variable(
+        "dummy", shape=[1], initializer=tf.zeros_initializer())
 
 
 def function_with_create(trainable):
   """Creates a variable as a side effect using tf.Variable."""
   tf.Variable(0, trainable=trainable)
-  return tf.get_variable("dummy",
-                         shape=[1],
-                         initializer=tf.zeros_initializer)
+  return tf.get_variable("dummy", shape=[1], initializer=tf.zeros_initializer())
 
 
 class TemplateTest(tf.test.TestCase):
@@ -78,7 +73,7 @@ class TemplateTest(tf.test.TestCase):
     train_op = optimizer.minimize(train_loss)
 
     with tf.Session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       initial_test_loss = sess.run(test_loss)
       sess.run(train_op)
       final_test_loss = sess.run(test_loss)
@@ -189,7 +184,7 @@ class TemplateTest(tf.test.TestCase):
   def test_internal_variable_reuse(self):
     def nested():
       with tf.variable_scope("nested") as vs:
-        v1 = tf.get_variable("x", initializer=tf.zeros_initializer, shape=[])
+        v1 = tf.get_variable("x", initializer=tf.zeros_initializer(), shape=[])
       with tf.variable_scope(vs, reuse=True):
         v2 = tf.get_variable("x")
       self.assertEqual(v1, v2)
@@ -271,6 +266,35 @@ class TemplateTest(tf.test.TestCase):
 
     # Template is called at the top level, so there is no preceding "foo_2".
     self.assertEqual(tc.var_scope.name, "blah")
+
+  def test_custom_getter(self):
+    # Custom getter that maintains call count and forwards to true getter
+    custom_getter_count = [0]
+    def custom_getter(getter, name, *args, **kwargs):
+      custom_getter_count[0] += 1
+      return getter(name, *args, **kwargs)
+
+    # Test that custom getter is called both when variables are created and
+    # subsequently accessed
+    tmpl1 = template.make_template("s1", var_scoped_function,
+                                   custom_getter_=custom_getter)
+    self.assertEqual(custom_getter_count[0], 0)
+    tmpl1()
+    self.assertEqual(custom_getter_count[0], 1)
+    tmpl1()
+    self.assertEqual(custom_getter_count[0], 2)
+
+    # Test that custom getter is called when the variable scope is created
+    # during construction
+    custom_getter_count[0] = 0
+    tmpl2 = template.make_template("s2", var_scoped_function,
+                                   custom_getter_=custom_getter,
+                                   create_scope_now_=True)
+    self.assertEqual(custom_getter_count[0], 0)
+    tmpl2()
+    self.assertEqual(custom_getter_count[0], 1)
+    tmpl2()
+    self.assertEqual(custom_getter_count[0], 2)
 
 if __name__ == "__main__":
   tf.test.main()

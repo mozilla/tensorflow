@@ -116,6 +116,8 @@ import abc
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
 from tensorflow.python.debug import debug_utils
+from tensorflow.python.debug import stepper
+from tensorflow.python.framework import errors
 
 
 # Helper function.
@@ -154,9 +156,9 @@ class OnSessionInitRequest(object):
 class OnSessionInitAction(object):
   """Enum-like values for possible action to take on session init."""
 
-  # Proceed, without special actions, in the wrapper session initializaton. What
-  # action the wrapper session performs next is determined by the caller of the
-  # wrapper session. E.g., it can call run().
+  # Proceed, without special actions, in the wrapper session initialization.
+  # What action the wrapper session performs next is determined by the caller
+  # of the wrapper session. E.g., it can call run().
   PROCEED = "proceed"
 
   # Instead of letting the caller of the wrapper session determine what actions
@@ -253,13 +255,22 @@ class OnRunEndRequest(object):
   The callback is invoked immediately before the wrapped run() call ends.
   """
 
-  def __init__(self, performed_action, run_metadata=None):
+  def __init__(self,
+               performed_action,
+               run_metadata=None,
+               client_graph_def=None,
+               tf_error=None):
     """Constructor for OnRunEndRequest.
 
     Args:
       performed_action: (OnRunStartAction) Actually-performed action by the
         debug-wrapper session.
       run_metadata: run_metadata output from the run() call (if any).
+      client_graph_def: (GraphDef) GraphDef from the client side, i.e., from
+        the python front end of TensorFlow. Can be obtained with
+        session.graph.as_graph_def().
+      tf_error: (errors.OpError subtypes) TensorFlow OpError that occurred
+        during the run (if any).
     """
 
     _check_type(performed_action, str)
@@ -268,6 +279,8 @@ class OnRunEndRequest(object):
     if run_metadata is not None:
       _check_type(run_metadata, config_pb2.RunMetadata)
     self.run_metadata = run_metadata
+    self.client_graph_def = client_graph_def
+    self.tf_error = tf_error
 
 
 class OnRunEndResponse(object):
@@ -367,17 +380,31 @@ class BaseDebugWrapperSession(session.SessionInterface):
       self._decorate_run_options(decorated_run_options,
                                  run_start_resp.debug_urls)
 
-      # Invoke the run() method of the wrapped Session.
-      retvals = self._sess.run(
-          fetches,
-          feed_dict=feed_dict,
-          options=decorated_run_options,
-          run_metadata=run_metadata)
+      # Invoke the run() method of the wrapped Session. Catch any TensorFlow
+      # runtime errors.
+      tf_error = None
+      try:
+        retvals = self._sess.run(fetches,
+                                 feed_dict=feed_dict,
+                                 options=decorated_run_options,
+                                 run_metadata=run_metadata)
+      except errors.OpError as op_error:
+        tf_error = op_error
+        retvals = op_error
 
-      # Prepare arg for the on-run-end callback.
       run_end_req = OnRunEndRequest(
-          run_start_resp.action, run_metadata=run_metadata)
-    elif run_start_resp.action == OnRunStartAction.NON_DEBUG_RUN:
+          run_start_resp.action,
+          run_metadata=run_metadata,
+          client_graph_def=self._sess.graph.as_graph_def(),
+          tf_error=tf_error)
+
+    elif (run_start_resp.action == OnRunStartAction.NON_DEBUG_RUN or
+          run_start_resp.action == OnRunStartAction.INVOKE_STEPPER):
+      if run_start_resp.action == OnRunStartAction.INVOKE_STEPPER:
+        retvals = self.invoke_node_stepper(
+            stepper.NodeStepper(self._sess, fetches, feed_dict),
+            restore_variable_values_on_exit=True)
+
       # Invoke run() method of the wrapped session.
       retvals = self._sess.run(
           fetches,
@@ -387,10 +414,6 @@ class BaseDebugWrapperSession(session.SessionInterface):
 
       # Prepare arg for the on-run-end callback.
       run_end_req = OnRunEndRequest(run_start_resp.action)
-    elif run_start_resp.action == OnRunStartAction.INVOKE_STEPPER:
-      # TODO(cais): Implement stepper loop.
-      raise NotImplementedError(
-          "OnRunStartAction INVOKE_STEPPER has not been implemented.")
     else:
       raise ValueError(
           "Invalid OnRunStartAction value: %s" % run_start_resp.action)
@@ -441,7 +464,6 @@ class BaseDebugWrapperSession(session.SessionInterface):
     Returns:
       An instance of OnSessionInitResponse.
     """
-    pass
 
   @abc.abstractmethod
   def on_run_start(self, request):
@@ -462,7 +484,6 @@ class BaseDebugWrapperSession(session.SessionInterface):
           with or without debug tensor watching, invoking the stepper.)
         2) debug URLs used to watch the tensors.
     """
-    pass
 
   @abc.abstractmethod
   def on_run_end(self, request):
@@ -479,7 +500,33 @@ class BaseDebugWrapperSession(session.SessionInterface):
     Returns:
       An instance of OnRunStartResponse.
     """
-    pass
+
+  def __enter__(self):
+    return self._sess.__enter__()
+
+  def __exit__(self, exec_type, exec_value, exec_tb):
+    self._sess.__exit__(exec_type, exec_value, exec_tb)
+
+  def close(self):
+    self._sess.close()
 
   # TODO(cais): Add _node_name_regex_whitelist and
   #   _node_op_type_regex_whitelist.
+
+  @abc.abstractmethod
+  def invoke_node_stepper(self,
+                          node_stepper,
+                          restore_variable_values_on_exit=True):
+    """Callback invoked when the client intends to step through graph nodes.
+
+    Args:
+      node_stepper: (stepper.NodeStepper) An instance of NodeStepper to be used
+        in this stepping session.
+      restore_variable_values_on_exit: (bool) Whether any variables whose values
+        have been altered during this node-stepper invocation should be restored
+        to their old values when this invocation ends.
+
+    Returns:
+      The same return values as the `Session.run()` call on the same fetches as
+        the NodeStepper.
+    """

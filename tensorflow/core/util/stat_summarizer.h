@@ -16,13 +16,13 @@ limitations under the License.
 #ifndef TENSORFLOW_UTIL_STAT_SUMMARIZER_H_
 #define TENSORFLOW_UTIL_STAT_SUMMARIZER_H_
 
+#include <stdlib.h>
+
 #include <cmath>
 #include <limits>
 #include <map>
 #include <sstream>
 #include <string>
-
-#include <stdlib.h>
 
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/types.pb.h"
@@ -111,8 +111,11 @@ class StatSummarizer {
   // Adds another run's StepStats output to the aggregate counts.
   void ProcessStepStats(const StepStats& step_stats);
 
-  // Prints all the accumulated runtime stats in a tab-separated format which
-  // can be pasted into a spreadsheet for further analysis.
+  // Returns a string detailing the accumulated runtime stats in a tab-separated
+  // format which can be pasted into a spreadsheet for further analysis.
+  std::string GetOutputString() const;
+
+  // Prints the string returned by GetOutputString().
   void PrintStepStats() const;
 
   // Prints the output tensor sizes and types for each node.
@@ -155,6 +158,8 @@ class StatSummarizer {
       double cdf_cutoff_ratio = 1.0,
       int num_max_nodes_to_print = std::numeric_limits<int>::max()) const;
 
+  std::string GetStatsByNodeType() const;
+
   void Reset() {
     run_total_micros_.Reset();
     memory_.Reset();
@@ -180,6 +185,8 @@ class StatSummarizer {
     BY_TOTAL,
     BY_RUN_ORDER,
   };
+
+  void Validate(const Detail* detail, const NodeExecStats& ns) const;
 
   // Summarizes all nodes' stat in the order of node names defined in the graph.
   std::string GetStatsByOrderOfNodeDefinitions(bool use_memory) const;

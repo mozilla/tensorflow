@@ -137,14 +137,14 @@ class SparseConcatTest(tf.test.TestCase):
 
           self.assertEqual(sp_concat.indices.get_shape(), [4, 2])
           self.assertEqual(sp_concat.values.get_shape(), [4])
-          self.assertEqual(sp_concat.shape.get_shape(), [2])
+          self.assertEqual(sp_concat.dense_shape.get_shape(), [2])
 
           concat_out = sess.run(sp_concat)
 
           self.assertAllEqual(concat_out.indices,
                               [[0, 2], [1, 0], [2, 0], [2, 2]])
           self.assertAllEqual(concat_out.values, [1, 2, 3, 4])
-          self.assertAllEqual(concat_out.shape, [3, 3])
+          self.assertAllEqual(concat_out.dense_shape, [3, 3])
 
   def testConcat2(self):
     with self.test_session(use_gpu=False) as sess:
@@ -159,7 +159,7 @@ class SparseConcatTest(tf.test.TestCase):
 
             self.assertEqual(sp_concat.indices.get_shape(), [8, 2])
             self.assertEqual(sp_concat.values.get_shape(), [8])
-            self.assertEqual(sp_concat.shape.get_shape(), [2])
+            self.assertEqual(sp_concat.dense_shape.get_shape(), [2])
 
             concat_out = sess.run(sp_concat)
 
@@ -167,7 +167,7 @@ class SparseConcatTest(tf.test.TestCase):
                                                      [2, 0], [2, 2], [2, 3],
                                                      [2, 6], [2, 7]])
             self.assertAllEqual(concat_out.values, [1, 2, 1, 3, 4, 2, 1, 0])
-            self.assertAllEqual(concat_out.shape, [3, 8])
+            self.assertAllEqual(concat_out.dense_shape, [3, 8])
 
   def testConcatDim0(self):
     with self.test_session(use_gpu=False) as sess:
@@ -185,7 +185,7 @@ class SparseConcatTest(tf.test.TestCase):
 
         self.assertEqual(sp_concat.indices.get_shape(), [7, 2])
         self.assertEqual(sp_concat.values.get_shape(), [7])
-        self.assertEqual(sp_concat.shape.get_shape(), [2])
+        self.assertEqual(sp_concat.dense_shape.get_shape(), [2])
 
         concat_out = sess.run(sp_concat)
 
@@ -193,7 +193,7 @@ class SparseConcatTest(tf.test.TestCase):
             concat_out.indices,
             [[0, 2], [1, 0], [2, 0], [2, 2], [3, 1], [4, 0], [4, 2]])
         self.assertAllEqual(concat_out.values, np.array([1, 2, 3, 4, 1, 1, 2]))
-        self.assertAllEqual(concat_out.shape, np.array([5, 3]))
+        self.assertAllEqual(concat_out.dense_shape, np.array([5, 3]))
 
   def testConcat3(self):
     with self.test_session(use_gpu=False) as sess:
@@ -210,7 +210,7 @@ class SparseConcatTest(tf.test.TestCase):
 
         self.assertEqual(sp_concat.indices.get_shape(), [10, 2])
         self.assertEqual(sp_concat.values.get_shape(), [10])
-        self.assertEqual(sp_concat.shape.get_shape(), [2])
+        self.assertEqual(sp_concat.dense_shape.get_shape(), [2])
 
         concat_out = sess.run(sp_concat)
 
@@ -218,7 +218,7 @@ class SparseConcatTest(tf.test.TestCase):
                                                  [2, 0], [2, 2], [2, 3], [2, 6],
                                                  [2, 7], [2, 8]])
         self.assertAllEqual(concat_out.values, [1, 2, 1, 1, 3, 4, 2, 1, 0, 2])
-        self.assertAllEqual(concat_out.shape, [3, 10])
+        self.assertAllEqual(concat_out.dense_shape, [3, 10])
 
   def testConcatNonNumeric(self):
     with self.test_session(use_gpu=False) as sess:
@@ -234,7 +234,7 @@ class SparseConcatTest(tf.test.TestCase):
 
         self.assertEqual(sp_concat.indices.get_shape(), [8, 2])
         self.assertEqual(sp_concat.values.get_shape(), [8])
-        self.assertEqual(sp_concat.shape.get_shape(), [2])
+        self.assertEqual(sp_concat.dense_shape.get_shape(), [2])
 
         concat_out = sess.run(sp_concat)
 
@@ -243,7 +243,7 @@ class SparseConcatTest(tf.test.TestCase):
             [[0, 2], [1, 0], [1, 4], [2, 0], [2, 2], [2, 3], [2, 6], [2, 7]])
         self.assertAllEqual(concat_out.values,
                             [b"a", b"b", b"e", b"c", b"d", b"f", b"g", b"h"])
-        self.assertAllEqual(concat_out.shape, [3, 8])
+        self.assertAllEqual(concat_out.dense_shape, [3, 8])
 
   def testMismatchedRank(self):
     with self.test_session(use_gpu=False):
@@ -301,7 +301,7 @@ class SparseConcatTest(tf.test.TestCase):
                                [10, 2]])
           self.assertAllEqual(sp_concat_dim0_out.values,
                               [1, 2, 3, 4, 1, 2, 1, 0, 1, 2, 1, 1, 2])
-          self.assertAllEqual(sp_concat_dim0_out.shape, [11, 5])
+          self.assertAllEqual(sp_concat_dim0_out.dense_shape, [11, 5])
 
           self.assertAllEqual(sp_concat_dim1_out.indices,
                               [[0, 2], [0, 11], [1, 0], [1, 4], [1, 8], [1, 10],
@@ -309,7 +309,7 @@ class SparseConcatTest(tf.test.TestCase):
                                [2, 8]])
           self.assertAllEqual(sp_concat_dim1_out.values,
                               [1, 1, 2, 1, 1, 1, 2, 3, 4, 2, 1, 0, 2])
-          self.assertAllEqual(sp_concat_dim1_out.shape, [3, 13])
+          self.assertAllEqual(sp_concat_dim1_out.dense_shape, [3, 13])
 
   def testShapeInferenceUnknownShapes(self):
     with self.test_session(use_gpu=False):
@@ -324,7 +324,7 @@ class SparseConcatTest(tf.test.TestCase):
 
         self.assertEqual(sp_concat.indices.get_shape().as_list(), [None, 3])
         self.assertEqual(sp_concat.values.get_shape().as_list(), [None])
-        self.assertEqual(sp_concat.shape.get_shape(), [3])
+        self.assertEqual(sp_concat.dense_shape.get_shape(), [3])
 
 
 if __name__ == "__main__":

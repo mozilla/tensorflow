@@ -95,7 +95,7 @@ def stack_bidirectional_rnn(cells_fw,
   states_bw = []
   prev_layer = inputs
 
-  with vs.variable_scope(scope or "StackRNN"):
+  with vs.variable_scope(scope or "stack_bidirectional_rnn"):
     for i, (cell_fw, cell_bw) in enumerate(zip(cells_fw, cells_bw)):
       initial_state_fw = None
       initial_state_bw = None
@@ -104,7 +104,7 @@ def stack_bidirectional_rnn(cells_fw,
       if initial_states_bw:
         initial_state_bw = initial_states_bw[i]
 
-      with vs.variable_scope("Layer%d" % i):
+      with vs.variable_scope("cell_%d" % i) as cell_scope:
         prev_layer, state_fw, state_bw = tf.nn.bidirectional_rnn(
             cell_fw,
             cell_bw,
@@ -112,7 +112,8 @@ def stack_bidirectional_rnn(cells_fw,
             initial_state_fw=initial_state_fw,
             initial_state_bw=initial_state_bw,
             sequence_length=sequence_length,
-            dtype=dtype)
+            dtype=dtype,
+            scope=cell_scope)
       states_fw.append(state_fw)
       states_bw.append(state_bw)
 
@@ -192,7 +193,7 @@ def stack_bidirectional_dynamic_rnn(cells_fw,
   states_bw = []
   prev_layer = inputs
 
-  with vs.variable_scope(scope or "StackRNN"):
+  with vs.variable_scope(scope or "stack_bidirectional_rnn"):
     for i, (cell_fw, cell_bw) in enumerate(zip(cells_fw, cells_bw)):
       initial_state_fw = None
       initial_state_bw = None
@@ -201,7 +202,7 @@ def stack_bidirectional_dynamic_rnn(cells_fw,
       if initial_states_bw:
         initial_state_bw = initial_states_bw[i]
 
-      with vs.variable_scope("Layer%d" % i):
+      with vs.variable_scope("cell_%d" % i):
         outputs, (state_fw, state_bw) = tf.nn.bidirectional_dynamic_rnn(
             cell_fw,
             cell_bw,
@@ -211,7 +212,7 @@ def stack_bidirectional_dynamic_rnn(cells_fw,
             sequence_length=sequence_length,
             dtype=dtype)
         # Concat the outputs to create the new input.
-        prev_layer = tf.concat(2, outputs)
+        prev_layer = tf.concat_v2(outputs, 2)
       states_fw.append(state_fw)
       states_bw.append(state_bw)
 

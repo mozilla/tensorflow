@@ -342,7 +342,7 @@ class ZerosLikeTest(tf.test.TestCase):
       self._compareZeros(dtype, False)
 
   def testZerosLikeGPU(self):
-    for dtype in [tf.float32, tf.float64, tf.int32, tf.bool]:
+    for dtype in [tf.float32, tf.float64, tf.int32, tf.bool, tf.int64]:
       self._compareZeros(dtype, True)
 
   def testZerosLikePartialShape(self):
@@ -501,14 +501,14 @@ class FillTest(tf.test.TestCase):
 
   def testFillNegative(self):
     with self.test_session():
-      for shape in (-1,), (2, -1), (-1, 2):
+      for shape in (-1,), (2, -1), (-1, 2), (-2), (-3):
         with self.assertRaises(ValueError):
           tf.fill(shape, 7)
 
-      # Using a placeholder so this won't be caught in Python.
+      # Using a placeholder so this won't be caught in static analysis.
       dims = tf.placeholder(tf.int32)
       fill_t = tf.fill(dims, 3.0)
-      for shape in (-1,), (2, -1), (-1, 2):
+      for shape in (-1,), (2, -1), (-1, 2), (-2), (-3):
         with self.assertRaises(tf.errors.InvalidArgumentError):
           fill_t.eval({dims: shape})
 

@@ -85,41 +85,62 @@ class BatchMatrixTransposeTest(test_util.TensorFlowTestCase):
 
 class BooleanMaskTest(test_util.TensorFlowTestCase):
 
+  def setUp(self):
+    self.rng = np.random.RandomState(42)
+
   def CheckVersusNumpy(self, ndims_mask, arr_shape, make_mask=None):
     """Check equivalence between boolean_mask and numpy masking."""
     if make_mask is None:
-      make_mask = lambda shape: np.random.randint(0, 2, size=shape).astype(bool)
+      make_mask = lambda shape: self.rng.randint(0, 2, size=shape).astype(bool)
     arr = np.random.rand(*arr_shape)
     mask = make_mask(arr_shape[: ndims_mask])
     masked_arr = arr[mask]
     with self.test_session():
       masked_tensor = array_ops.boolean_mask(arr, mask)
-      np.testing.assert_allclose(
-          masked_arr,
-          masked_tensor.eval(),
-          err_msg="masked_arr:\n%s\n\nmasked_tensor:\n%s" % (
-              masked_arr, masked_tensor.eval()))
-      masked_tensor.get_shape().assert_is_compatible_with(masked_arr.shape)
-      self.assertSequenceEqual(
-          masked_tensor.get_shape()[1:].as_list(),
-          masked_arr.shape[1:],
-          msg="shape information lost %s -> %s" % (
-              masked_arr.shape, masked_tensor.get_shape()))
 
-  def testOneDimensionalMask(self):
-    # Do 1d separately because it's the only easy one to debug!
+      # Leading dimension size of masked_tensor is always unknown until runtime
+      # since we don't how many elements will be kept.
+      self.assertAllEqual(masked_tensor.get_shape()[1:], masked_arr.shape[1:])
+
+      self.assertAllClose(masked_arr, masked_tensor.eval())
+
+  def testMaskDim1ArrDim1(self):
     ndims_mask = 1
-    for ndims_arr in range(ndims_mask, ndims_mask + 3):
-      for _ in range(3):
-        arr_shape = np.random.randint(1, 5, size=ndims_arr)
-        self.CheckVersusNumpy(ndims_mask, arr_shape)
+    for arr_shape in [(1,), (2,), (3,), (10,)]:
+      self.CheckVersusNumpy(ndims_mask, arr_shape)
 
-  def testMultiDimensionalMask(self):
-    for ndims_mask in range(1, 4):
-      for ndims_arr in range(ndims_mask, ndims_mask + 3):
-        for _ in range(3):
-          arr_shape = np.random.randint(1, 5, size=ndims_arr)
-          self.CheckVersusNumpy(ndims_mask, arr_shape)
+  def testMaskDim1ArrDim2(self):
+    ndims_mask = 1
+    for arr_shape in [(1, 1), (2, 2), (2, 5)]:
+      self.CheckVersusNumpy(ndims_mask, arr_shape)
+
+  def testMaskDim2ArrDim2(self):
+    ndims_mask = 2
+    for arr_shape in [(1, 1), (2, 2), (2, 5)]:
+      self.CheckVersusNumpy(ndims_mask, arr_shape)
+
+  def testMaskDim2ArrDim3(self):
+    ndims_mask = 2
+    for arr_shape in [(1, 1, 1), (1, 2, 2), (2, 2, 1)]:
+      self.CheckVersusNumpy(ndims_mask, arr_shape)
+
+  def testEmptyInput2D(self):
+    mask = np.array([True, False])
+    arr = np.array([[], []]).astype(np.float32)
+    numpy_result = arr[mask]
+    tf_result = tf.boolean_mask(arr, mask)
+    self.assertAllEqual(numpy_result.shape[1:], tf_result.get_shape()[1:])
+    with self.test_session():
+      self.assertAllClose(numpy_result, tf_result.eval())
+
+  def testEmptyInput1D(self):
+    mask = np.array([]).astype(bool)
+    arr = np.array([]).astype(np.float32)
+    numpy_result = arr[mask]
+    tf_result = tf.boolean_mask(arr, mask)
+    self.assertAllEqual(numpy_result.shape[1:], tf_result.get_shape()[1:])
+    with self.test_session():
+      self.assertAllClose(numpy_result, tf_result.eval())
 
   def testEmptyOutput(self):
     make_mask = lambda shape: np.zeros(shape, dtype=bool)
@@ -201,48 +222,6 @@ class OperatorShapeTest(test_util.TensorFlowTestCase):
     self.assertEqual(matrix_squeezed.get_shape(), (3))
 
 
-class ReverseTest(test_util.TensorFlowTestCase):
-
-  def testReverse0DimAuto(self):
-    x_np = 4
-    for use_gpu in [False, True]:
-      with self.test_session(use_gpu=use_gpu):
-        x_tf = array_ops.reverse(x_np, []).eval()
-        self.assertAllEqual(x_tf, x_np)
-
-  def _reverse1DimAuto(self, np_dtype):
-    x_np = np.array([1, 2, 3, 4, 5], dtype=np_dtype)
-
-    for use_gpu in [False, True]:
-      with self.test_session(use_gpu=use_gpu):
-        x_tf = array_ops.reverse(x_np, [True]).eval()
-        self.assertAllEqual(x_tf, np.asarray(x_np)[::-1])
-
-  def testReverse1DimAuto(self):
-    for dtype in [np.uint8, np.int8, np.int32, np.int64, np.bool, np.float16,
-                  np.float32, np.float64, np.complex64, np.complex128]:
-      self._reverse1DimAuto(dtype)
-
-  def testUnknownDims(self):
-    data_t = tf.placeholder(tf.float32)
-    dims_known_t = tf.placeholder(tf.bool, shape=[3])
-    reverse_known_t = tf.reverse(data_t, dims_known_t)
-    self.assertEqual(3, reverse_known_t.get_shape().ndims)
-
-    dims_unknown_t = tf.placeholder(tf.bool)
-    reverse_unknown_t = tf.reverse(data_t, dims_unknown_t)
-    self.assertIs(None, reverse_unknown_t.get_shape().ndims)
-
-    data_2d_t = tf.placeholder(tf.float32, shape=[None, None])
-    dims_2d_t = tf.placeholder(tf.bool, shape=[2])
-    reverse_2d_t = tf.reverse(data_2d_t, dims_2d_t)
-    self.assertEqual(2, reverse_2d_t.get_shape().ndims)
-
-    dims_3d_t = tf.placeholder(tf.bool, shape=[3])
-    with self.assertRaisesRegexp(ValueError, "must be rank 3"):
-      tf.reverse(data_2d_t, dims_3d_t)
-
-
 class ReverseV2Test(test_util.TensorFlowTestCase):
 
   def testReverse0DimAuto(self):
@@ -263,18 +242,19 @@ class ReverseV2Test(test_util.TensorFlowTestCase):
   def _reverse2DimAuto(self, np_dtype):
     x_np = np.array([[1, 2, 3], [4, 5, 6]], dtype=np_dtype)
 
-    for use_gpu in [False, True]:
-      with self.test_session(use_gpu=use_gpu):
-        x_tf_1 = array_ops.reverse_v2(x_np, [0]).eval()
-        x_tf_2 = array_ops.reverse_v2(x_np, [-2]).eval()
-        x_tf_3 = array_ops.reverse_v2(x_np, [1]).eval()
-        x_tf_4 = array_ops.reverse_v2(x_np, [-1]).eval()
-        x_tf_5 = array_ops.reverse_v2(x_np, [1, 0]).eval()
-        self.assertAllEqual(x_tf_1, np.asarray(x_np)[::-1, :])
-        self.assertAllEqual(x_tf_2, np.asarray(x_np)[::-1, :])
-        self.assertAllEqual(x_tf_3, np.asarray(x_np)[:, ::-1])
-        self.assertAllEqual(x_tf_4, np.asarray(x_np)[:, ::-1])
-        self.assertAllEqual(x_tf_5, np.asarray(x_np)[::-1, ::-1])
+    for reverse_f in [array_ops.reverse_v2, array_ops.reverse]:
+      for use_gpu in [False, True]:
+        with self.test_session(use_gpu=use_gpu):
+          x_tf_1 = reverse_f(x_np, [0]).eval()
+          x_tf_2 = reverse_f(x_np, [-2]).eval()
+          x_tf_3 = reverse_f(x_np, [1]).eval()
+          x_tf_4 = reverse_f(x_np, [-1]).eval()
+          x_tf_5 = reverse_f(x_np, [1, 0]).eval()
+          self.assertAllEqual(x_tf_1, np.asarray(x_np)[::-1, :])
+          self.assertAllEqual(x_tf_2, np.asarray(x_np)[::-1, :])
+          self.assertAllEqual(x_tf_3, np.asarray(x_np)[:, ::-1])
+          self.assertAllEqual(x_tf_4, np.asarray(x_np)[:, ::-1])
+          self.assertAllEqual(x_tf_5, np.asarray(x_np)[::-1, ::-1])
 
   # This is the version of reverse that uses axis indices rather than
   # bool tensors
@@ -491,8 +471,10 @@ class StridedSliceTest(test_util.TensorFlowTestCase):
         bar2 = tf.constant(3)
         _ = checker[..., bar:bar2]
         _ = checker[..., bar]
-        with self.assertRaisesRegexp(TypeError,
-                                     "DataType float32 for attr 'Index'"):
+        with self.assertRaisesRegexp(
+            TypeError,
+            "Value passed to parameter 'begin' has DataType float32 not in "
+            "list of allowed values"):
           _ = checker[..., 3.0]
         _ = checker[..., 3]
 
@@ -646,7 +628,7 @@ class StridedSliceGradTest(test_util.TensorFlowTestCase):
     for use_gpu in [False, True]:
       with self.test_session(use_gpu=use_gpu) as sess:
         var = tf.Variable(tf.reshape(tf.range(1, 97, 1), shape=(6, 4, 4)))
-        init = tf.initialize_all_variables()
+        init = tf.global_variables_initializer()
         sess.run(init)
 
         grad = GradSliceChecker(self, sess, var,
@@ -666,7 +648,7 @@ class StridedSliceGradTest(test_util.TensorFlowTestCase):
     for use_gpu in [False, True]:
       with self.test_session(use_gpu=use_gpu) as sess:
         var = tf.Variable(8)
-        init = tf.initialize_all_variables()
+        init = tf.global_variables_initializer()
         sess.run(init)
         grad = GradSliceChecker(self, sess, var,
                                 np.array(8))
@@ -682,7 +664,7 @@ class StridedSliceGradTypeTest(test_util.TensorFlowTestCase):
           tf.reshape(
               tf.cast(tf.range(1, 5, 1), tf.float32), shape=(4, 1, 1)))
       varshape = tf.Variable([6, 4, 4], dtype=tf.int32)
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       begin = tf.constant([0, 0, 0])
       end = tf.constant([4, 1, 1])
       strides = tf.constant([1, 1, 1])
@@ -694,7 +676,7 @@ class StridedSliceGradTypeTest(test_util.TensorFlowTestCase):
       original_dy = tf.reshape(
           tf.cast(tf.range(1, 5, 1), tf.float32), shape=(4, 1, 1))
       original_shape = tf.constant([6, 4, 4], dtype=tf.int64)
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       begin = tf.constant([0, 0, 0], dtype=tf.int64)
       end = tf.constant([4, 1, 1], dtype=tf.int64)
       strides = tf.constant([1, 1, 1], dtype=tf.int64)
@@ -707,7 +689,7 @@ class StridedSliceGradTypeTest(test_util.TensorFlowTestCase):
       original_dy = tf.reshape(
           tf.cast(tf.range(1, 5, 1), tf.float32), shape=(4, 1, 1))
       original_shape = tf.constant([6, 4, 4], dtype=tf.int64)
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       begin = tf.constant([0, 0, 0], dtype=tf.int32)
       end = tf.constant([4, 1, 1], dtype=tf.int64)
       strides = tf.constant([1, 1, 1], dtype=tf.int64)
@@ -732,7 +714,7 @@ class StridedSliceBenchmark(tf.test.Benchmark):
   """Benchmark new strided slice operation on non-trivial case."""
 
   def run_and_time(self, slice_op):
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer().run()
     for _ in range(10):
       _ = slice_op.eval()
     iters = 1000
@@ -857,7 +839,7 @@ class ShapeSizeRankTest(test_util.TensorFlowTestCase):
       sp_value = tf.SparseTensorValue(
           indices=((0, 1), (1, 0)),
           values=(42, 24),
-          shape=(2, 2))
+          dense_shape=(2, 2))
       self.assertAllEqual((2, 2), tf.shape(sp_value).eval())
       self.assertEqual(4, tf.size(sp_value).eval())
       self.assertEqual(2, tf.rank(sp_value).eval())
@@ -891,6 +873,22 @@ class SequenceMaskTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(res.eval(), [[0.0, 0.0, 0.0, 0.0],
                                        [1.0, 0.0, 0.0, 0.0],
                                        [1.0, 1.0, 1.0, 1.0]])
+
+  def testDtypes(self):
+    def check_dtypes(lengths_dtype, maxlen_dtype):
+      res = tf.sequence_mask(tf.constant([1, 3, 2], dtype=lengths_dtype),
+                             tf.constant(5, dtype=maxlen_dtype))
+      self.assertAllEqual(res.get_shape(), [3, 5])
+      self.assertAllEqual(res.eval(), [[True, False, False, False, False],
+                                       [True, True, True, False, False],
+                                       [True, True, False, False, False]])
+
+    with self.test_session():
+      check_dtypes(tf.int32, tf.int32)
+      check_dtypes(tf.int32, tf.int64)
+      check_dtypes(tf.int64, tf.int32)
+      check_dtypes(tf.int64, tf.int64)
+
 
 if __name__ == "__main__":
   tf.test.main()

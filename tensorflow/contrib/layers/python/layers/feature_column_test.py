@@ -14,13 +14,13 @@
 # ==============================================================================
 """Tests for layers.feature_column."""
 
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import itertools
 import os
+import tempfile
 
 import numpy as np
 import tensorflow as tf
@@ -40,7 +40,7 @@ def _sparse_id_tensor(shape, vocab_size, seed=112123):
   indices = indices[keep]
   values = values[keep]
 
-  return tf.SparseTensor(indices=indices, values=values, shape=shape)
+  return tf.SparseTensor(indices=indices, values=values, dense_shape=shape)
 
 
 class FeatureColumnTest(tf.test.TestCase):
@@ -63,11 +63,29 @@ class FeatureColumnTest(tf.test.TestCase):
     self.assertEqual(a.name, "aaa")
     self.assertEqual(a.dtype, tf.int64)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 "dtype must be string or integer"):
-      a = tf.contrib.layers.sparse_column_with_hash_bucket("aaa",
-                                                           hash_bucket_size=100,
-                                                           dtype=tf.float32)
+    with self.assertRaisesRegexp(ValueError, "dtype must be string or integer"):
+      a = tf.contrib.layers.sparse_column_with_hash_bucket(
+          "aaa", hash_bucket_size=100, dtype=tf.float32)
+
+  def testSparseColumnWithVocabularyFile(self):
+    b = tf.contrib.layers.sparse_column_with_vocabulary_file(
+        "bbb", vocabulary_file="a_file", vocab_size=454)
+    self.assertEqual(b.dtype, tf.string)
+    self.assertEqual(b.lookup_config.vocab_size, 454)
+    self.assertEqual(b.lookup_config.vocabulary_file, "a_file")
+
+    with self.assertRaises(ValueError):
+      # Vocabulary size should be defined if vocabulary_file is used.
+      tf.contrib.layers.sparse_column_with_vocabulary_file(
+          "bbb", vocabulary_file="somefile")
+
+    b = tf.contrib.layers.sparse_column_with_vocabulary_file(
+        "bbb", vocabulary_file="a_file", vocab_size=454, dtype=tf.int64)
+    self.assertEqual(b.dtype, tf.int64)
+
+    with self.assertRaisesRegexp(ValueError, "dtype must be string or integer"):
+      b = tf.contrib.layers.sparse_column_with_vocabulary_file(
+          "bbb", vocabulary_file="a_file", vocab_size=454, dtype=tf.float32)
 
   def testWeightedSparseColumn(self):
     ids = tf.contrib.layers.sparse_column_with_keys(
@@ -97,17 +115,17 @@ class FeatureColumnTest(tf.test.TestCase):
 
     # Create a sparse id tensor for a1.
     input_tensor_c1 = tf.SparseTensor(indices=[[0, 0], [1, 1], [2, 2]],
-                                      values=[0, 1, 2], shape=[3, 3])
+                                      values=[0, 1, 2], dense_shape=[3, 3])
     # Create a sparse id tensor for a2.
     input_tensor_c2 = tf.SparseTensor(indices=[[0, 0], [1, 1], [2, 2]],
-                                      values=[0, 1, 2], shape=[3, 3])
+                                      values=[0, 1, 2], dense_shape=[3, 3])
     with tf.variable_scope("run_1"):
       b1 = tf.contrib.layers.input_from_feature_columns(
           {b[0]: input_tensor_c1}, [b[0]])
       b2 = tf.contrib.layers.input_from_feature_columns(
           {b[1]: input_tensor_c2}, [b[1]])
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       b1_value = b1.eval()
       b2_value = b2.eval()
     for i in range(len(b1_value)):
@@ -131,7 +149,7 @@ class FeatureColumnTest(tf.test.TestCase):
       e1 = tf.contrib.layers.input_from_feature_columns(
           {e[0]: input_tensor_c1}, [e[0]])
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       d1_value = d1.eval()
       e1_value = e1.eval()
     for i in range(len(d1_value)):
@@ -428,6 +446,11 @@ class FeatureColumnTest(tf.test.TestCase):
                                                                10,
                                                                dtype=tf.float32)
 
+  def testSparseColumnSingleBucket(self):
+    sc = tf.contrib.layers.sparse_column_with_integerized_feature("sc", 1)
+    self.assertDictEqual({"sc": tf.VarLenFeature(dtype=tf.int64)}, sc.config)
+    self.assertEqual(1, sc._wide_embedding_lookup_arguments(None).vocab_size)
+
   def testCreateFeatureSpec(self):
     sparse_col = tf.contrib.layers.sparse_column_with_hash_bucket(
         "sparse_column", hash_bucket_size=100)
@@ -592,7 +615,7 @@ class FeatureColumnTest(tf.test.TestCase):
     # vocab.
     input_tensor = tf.SparseTensor(indices=[[0, 0], [1, 1], [2, 2], [3, 3]],
                                    values=[0, 1, 2, 3],
-                                   shape=[4, 4])
+                                   dense_shape=[4, 4])
 
     # Invoking 'layers.input_from_feature_columns' will create the embedding
     # variable. Creating under scope 'run_1' so as to prevent name conflicts
@@ -604,10 +627,13 @@ class FeatureColumnTest(tf.test.TestCase):
             {embedding_col: input_tensor}, [embedding_col])
 
     save = tf.train.Saver()
-    checkpoint_path = os.path.join(self.get_temp_dir(), "model.ckpt")
+    ckpt_dir_prefix = os.path.join(
+        self.get_temp_dir(), "init_embedding_col_w_from_ckpt")
+    ckpt_dir = tempfile.mkdtemp(prefix=ckpt_dir_prefix)
+    checkpoint_path = os.path.join(ckpt_dir, "model.ckpt")
 
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       saved_embedding = embeddings.eval()
       save.save(sess, checkpoint_path)
 
@@ -628,7 +654,7 @@ class FeatureColumnTest(tf.test.TestCase):
           [embedding_col_initialized])
 
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       loaded_embedding = pretrained_embeddings.eval()
 
     self.assertAllClose(saved_embedding, loaded_embedding)
@@ -645,7 +671,7 @@ class FeatureColumnTest(tf.test.TestCase):
 
     input_tensor = tf.SparseTensor(indices=[[0, 0], [1, 1], [2, 2], [3, 3]],
                                    values=[0, 1, 2, 3],
-                                   shape=[4, 4])
+                                   dense_shape=[4, 4])
 
     # Invoking 'weighted_sum_from_feature_columns' will create the crossed
     # column weights variable.
@@ -665,10 +691,13 @@ class FeatureColumnTest(tf.test.TestCase):
           assign_op = tf.assign(weight[0], weight[0] + 0.5)
 
     save = tf.train.Saver()
-    checkpoint_path = os.path.join(self.get_temp_dir(), "model.ckpt")
+    ckpt_dir_prefix = os.path.join(
+        self.get_temp_dir(), "init_crossed_col_w_from_ckpt")
+    ckpt_dir = tempfile.mkdtemp(prefix=ckpt_dir_prefix)
+    checkpoint_path = os.path.join(ckpt_dir, "model.ckpt")
 
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       sess.run(assign_op)
       saved_col_weights = col_weights[crossed_col][0].eval()
       save.save(sess, checkpoint_path)
@@ -694,7 +723,7 @@ class FeatureColumnTest(tf.test.TestCase):
       col_weights_from_ckpt = col_weights[crossed_col_initialized][0]
 
     with self.test_session() as sess:
-      sess.run(tf.initialize_all_variables())
+      sess.run(tf.global_variables_initializer())
       loaded_col_weights = col_weights_from_ckpt.eval()
 
     self.assertAllClose(saved_col_weights, loaded_col_weights)

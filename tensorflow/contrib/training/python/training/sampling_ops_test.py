@@ -133,7 +133,8 @@ class StratifiedSampleTest(tf.test.TestCase):
         val_input_batch, lbl_input_batch, probs, batch_size, init_probs=probs)
     batches += tf.contrib.training.stratified_sample(
         val_input_batch, lbl_input_batch, probs, batch_size, init_probs=probs)
-    summary_op = tf.merge_summary(tf.get_collection(tf.GraphKeys.SUMMARIES))
+    summary_op = tf.contrib.deprecated.merge_summary(
+        tf.get_collection(tf.GraphKeys.SUMMARIES))
 
     with self.test_session() as sess:
       coord = tf.train.Coordinator()
@@ -236,7 +237,7 @@ class StratifiedSampleTest(tf.test.TestCase):
     label_l = []
     with self.test_session() as sess:
       # Need to initialize variables that keep running total of classes seen.
-      tf.initialize_all_variables().run()
+      tf.global_variables_initializer().run()
 
       coord = tf.train.Coordinator()
       threads = tf.train.start_queue_runners(coord=coord)

@@ -20,6 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import functools
+import json
 import tempfile
 
 import numpy as np
@@ -27,6 +28,7 @@ import tensorflow as tf
 
 from tensorflow.contrib.learn.python.learn.estimators import _sklearn
 from tensorflow.contrib.learn.python.learn.estimators import estimator_test_utils
+from tensorflow.contrib.learn.python.learn.estimators import test_data
 from tensorflow.contrib.learn.python.learn.metric_spec import MetricSpec
 
 
@@ -37,13 +39,6 @@ def _prepare_iris_data_for_logistic_regression():
   iris = tf.contrib.learn.datasets.base.Dataset(data=iris.data[ids],
                                                 target=iris.target[ids])
   return iris
-
-
-def _iris_input_fn():
-  iris = tf.contrib.learn.datasets.load_iris()
-  return {
-      'feature': tf.constant(iris.data, dtype=tf.float32)
-  }, tf.constant(iris.target, shape=[150, 1], dtype=tf.int32)
 
 
 class LinearClassifierTest(tf.test.TestCase):
@@ -60,7 +55,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'age': tf.constant([1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -80,10 +75,11 @@ class LinearClassifierTest(tf.test.TestCase):
 
     def input_fn():
       return {
-          'age': tf.SparseTensor(values=['1'], indices=[[0, 0]], shape=[1, 1]),
+          'age': tf.SparseTensor(
+              values=['1'], indices=[[0, 0]], dense_shape=[1, 1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -108,8 +104,9 @@ class LinearClassifierTest(tf.test.TestCase):
         n_classes=3,
         feature_columns=[feature_column])
 
-    classifier.fit(input_fn=_iris_input_fn, steps=100)
-    scores = classifier.evaluate(input_fn=_iris_input_fn, steps=100)
+    classifier.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
+    scores = classifier.evaluate(
+        input_fn=test_data.iris_input_multiclass_fn, steps=100)
     self.assertGreater(scores['accuracy'], 0.9)
 
   def testMultiClass_MatrixData_Labels1D(self):
@@ -203,7 +200,7 @@ class LinearClassifierTest(tf.test.TestCase):
         n_classes=3,
         feature_columns=[feature_column])
 
-    classifier.fit(input_fn=_iris_input_fn, steps=100)
+    classifier.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
     self.assertEqual(4, len(classifier.weights_))
     self.assertEqual(3, len(classifier.bias_))
 
@@ -217,8 +214,9 @@ class LinearClassifierTest(tf.test.TestCase):
         optimizer=tf.train.FtrlOptimizer(learning_rate=0.1),
         feature_columns=[feature_column])
 
-    classifier.fit(input_fn=_iris_input_fn, steps=100)
-    scores = classifier.evaluate(input_fn=_iris_input_fn, steps=100)
+    classifier.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
+    scores = classifier.evaluate(
+        input_fn=test_data.iris_input_multiclass_fn, steps=100)
     self.assertGreater(scores['accuracy'], 0.9)
 
   def testCustomOptimizerByString(self):
@@ -234,8 +232,9 @@ class LinearClassifierTest(tf.test.TestCase):
         optimizer=_optimizer,
         feature_columns=[feature_column])
 
-    classifier.fit(input_fn=_iris_input_fn, steps=100)
-    scores = classifier.evaluate(input_fn=_iris_input_fn, steps=100)
+    classifier.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
+    scores = classifier.evaluate(
+        input_fn=test_data.iris_input_multiclass_fn, steps=100)
     self.assertGreater(scores['accuracy'], 0.9)
 
   def testCustomOptimizerByFunction(self):
@@ -248,8 +247,9 @@ class LinearClassifierTest(tf.test.TestCase):
         optimizer='Ftrl',
         feature_columns=[feature_column])
 
-    classifier.fit(input_fn=_iris_input_fn, steps=100)
-    scores = classifier.evaluate(input_fn=_iris_input_fn, steps=100)
+    classifier.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
+    scores = classifier.evaluate(
+        input_fn=test_data.iris_input_multiclass_fn, steps=100)
     self.assertGreater(scores['accuracy'], 0.9)
 
   def testCustomMetrics(self):
@@ -293,7 +293,18 @@ class LinearClassifierTest(tf.test.TestCase):
     self.assertEqual(_sklearn.accuracy_score([1, 0, 0, 0], predictions),
                      scores['my_accuracy'])
 
-    # Test the case where the 2nd element of the key is neither "classes" nor
+    # Tests the case where the prediction_key is neither "classes" nor
+    # "probabilities".
+    with self.assertRaisesRegexp(KeyError, 'bad_type'):
+      classifier.evaluate(
+          input_fn=_input_fn,
+          steps=100,
+          metrics={
+              'bad_name': MetricSpec(
+                  metric_fn=tf.contrib.metrics.streaming_auc,
+                  prediction_key='bad_type')})
+
+    # Tests the case where the 2nd element of the key is neither "classes" nor
     # "probabilities".
     with self.assertRaises(KeyError):
       classifier.evaluate(
@@ -301,7 +312,7 @@ class LinearClassifierTest(tf.test.TestCase):
           steps=100,
           metrics={('bad_name', 'bad_type'): tf.contrib.metrics.streaming_auc})
 
-    # Test the case where the tuple of the key doesn't have 2 elements.
+    # Tests the case where the tuple of the key doesn't have 2 elements.
     with self.assertRaises(ValueError):
       classifier.evaluate(
           input_fn=_input_fn,
@@ -341,7 +352,7 @@ class LinearClassifierTest(tf.test.TestCase):
       features = {
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       labels = tf.constant([[1], [0], [0]])
       return features, labels
@@ -353,13 +364,22 @@ class LinearClassifierTest(tf.test.TestCase):
                                                          hash_bucket_size=2e7)
     ]
 
+    tf_config = {
+        'cluster': {
+            tf.contrib.learn.TaskType.PS: ['fake_ps_0', 'fake_ps_1']
+        }
+    }
+    with tf.test.mock.patch.dict('os.environ',
+                                 {'TF_CONFIG': json.dumps(tf_config)}):
+      config = tf.contrib.learn.RunConfig()
+      # Because we did not start a distributed cluster, we need to pass an
+      # empty ClusterSpec, otherwise the device_setter will look for
+      # distributed jobs, such as "/job:ps" which are not present.
+      config._cluster_spec = tf.train.ClusterSpec({})
+
     classifier = tf.contrib.learn.LinearClassifier(
         feature_columns=sparse_features,
-        # Because we did not start a distributed cluster, we need to pass an
-        # empty ClusterSpec, otherwise the device_setter will look for
-        # distributed jobs, such as "/job:ps" which are not present.
-        config=tf.contrib.learn.RunConfig(
-            num_ps_replicas=2, cluster_spec=tf.train.ClusterSpec({})))
+        config=config)
     classifier.fit(input_fn=_input_fn, steps=200)
     loss = classifier.evaluate(input_fn=_input_fn, steps=1)['loss']
     self.assertLess(loss, 0.07)
@@ -371,7 +391,7 @@ class LinearClassifierTest(tf.test.TestCase):
       return {
           'age': tf.train.limit_epochs(tf.constant([1]), num_epochs=num_epochs),
           'language': tf.SparseTensor(
-              values=['english'], indices=[[0, 0]], shape=[1, 1]),
+              values=['english'], indices=[[0, 0]], dense_shape=[1, 1]),
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -482,7 +502,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'age': tf.constant([1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -503,7 +523,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'age': tf.constant([1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -512,7 +532,7 @@ class LinearClassifierTest(tf.test.TestCase):
     classifier = tf.contrib.learn.LinearClassifier(
         feature_columns=[age, language], enable_centered_bias=False)
     classifier.fit(input_fn=input_fn, steps=100)
-    self.assertFalse('centered_bias_weight' in classifier.get_variable_names())
+    self.assertNotIn('centered_bias_weight', classifier.get_variable_names())
 
   def testEnableCenteredBias(self):
     """Tests that we can disable centered bias."""
@@ -522,7 +542,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'age': tf.constant([1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -531,7 +551,7 @@ class LinearClassifierTest(tf.test.TestCase):
     classifier = tf.contrib.learn.LinearClassifier(
         feature_columns=[age, language], enable_centered_bias=True)
     classifier.fit(input_fn=input_fn, steps=100)
-    self.assertTrue('centered_bias_weight' in classifier.get_variable_names())
+    self.assertIn('centered_bias_weight', classifier.get_variable_names())
 
   def testTrainOptimizerWithL1Reg(self):
     """Tests l1 regularized model has higher loss."""
@@ -540,7 +560,7 @@ class LinearClassifierTest(tf.test.TestCase):
       return {
           'language': tf.SparseTensor(values=['hindi'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -565,7 +585,7 @@ class LinearClassifierTest(tf.test.TestCase):
       return {
           'language': tf.SparseTensor(values=['Swahili', 'turkish'],
                                       indices=[[0, 0], [2, 0]],
-                                      shape=[3, 1])
+                                      dense_shape=[3, 1])
       }, tf.constant([[1], [1], [1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -656,7 +676,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'price': tf.constant([[0.4], [0.6], [0.3]]),
           'country': tf.SparseTensor(values=['IT', 'US', 'GB'],
                                      indices=[[0, 0], [1, 3], [2, 1]],
-                                     shape=[3, 5]),
+                                     dense_shape=[3, 5]),
           'weights': tf.constant([[1.0], [1.0], [1.0]])
       }, tf.constant([[1], [0], [1]])
 
@@ -681,10 +701,10 @@ class LinearClassifierTest(tf.test.TestCase):
           'example_id': tf.constant(['1', '2', '3']),
           'price': tf.SparseTensor(values=[2., 3., 1.],
                                    indices=[[0, 0], [1, 0], [2, 0]],
-                                   shape=[3, 5]),
+                                   dense_shape=[3, 5]),
           'country': tf.SparseTensor(values=['IT', 'US', 'GB'],
                                      indices=[[0, 0], [1, 0], [2, 0]],
-                                     shape=[3, 5])
+                                     dense_shape=[3, 5])
       }, tf.constant([[1], [0], [1]])
 
     country = tf.contrib.layers.sparse_column_with_hash_bucket(
@@ -708,10 +728,10 @@ class LinearClassifierTest(tf.test.TestCase):
           'example_id': tf.constant(['1', '2', '3']),
           'language': tf.SparseTensor(values=['english', 'italian', 'spanish'],
                                       indices=[[0, 0], [1, 0], [2, 0]],
-                                      shape=[3, 1]),
+                                      dense_shape=[3, 1]),
           'country': tf.SparseTensor(values=['US', 'IT', 'MX'],
                                      indices=[[0, 0], [1, 0], [2, 0]],
-                                     shape=[3, 1])
+                                     dense_shape=[3, 1])
       }, tf.constant([[0], [0], [1]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket(
@@ -739,7 +759,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'sq_footage': tf.constant([[900.0], [700.0], [600.0]]),
           'country': tf.SparseTensor(values=['IT', 'US', 'GB'],
                                      indices=[[0, 0], [1, 3], [2, 1]],
-                                     shape=[3, 5]),
+                                     dense_shape=[3, 5]),
           'weights': tf.constant([[3.0], [1.0], [1.0]])
       }, tf.constant([[1], [0], [1]])
 
@@ -771,7 +791,7 @@ class LinearClassifierTest(tf.test.TestCase):
           'age': tf.constant([[1], [2]]),
           'language': tf.SparseTensor(values=['greek', 'chinese'],
                                       indices=[[0, 0], [1, 0]],
-                                      shape=[2, 1]),
+                                      dense_shape=[2, 1]),
       }, tf.constant([[1], [0]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -802,7 +822,7 @@ class LinearRegressorTest(tf.test.TestCase):
           'age': tf.constant([1]),
           'language': tf.SparseTensor(values=['english'],
                                       indices=[[0, 0]],
-                                      shape=[1, 1])
+                                      dense_shape=[1, 1])
       }, tf.constant([[10.]])
 
     language = tf.contrib.layers.sparse_column_with_hash_bucket('language', 100)
@@ -827,8 +847,9 @@ class LinearRegressorTest(tf.test.TestCase):
         feature_columns=cont_features,
         config=tf.contrib.learn.RunConfig(tf_random_seed=1))
 
-    regressor.fit(input_fn=_iris_input_fn, steps=100)
-    scores = regressor.evaluate(input_fn=_iris_input_fn, steps=1)
+    regressor.fit(input_fn=test_data.iris_input_multiclass_fn, steps=100)
+    scores = regressor.evaluate(
+        input_fn=test_data.iris_input_multiclass_fn, steps=1)
     self.assertLess(scores['loss'], 0.2)
 
   def testRegression_TensorData(self):
@@ -839,7 +860,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant([1.0, 0., 0.2], dtype=tf.float32)
 
@@ -954,7 +975,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant(labels, dtype=tf.float32)
 
@@ -984,7 +1005,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant(labels, dtype=tf.float32)
 
@@ -1028,8 +1049,11 @@ class LinearRegressorTest(tf.test.TestCase):
         input_fn=_input_fn,
         steps=1,
         metrics={
-            'my_error': tf.contrib.metrics.streaming_mean_squared_error,
-            'my_metric': _my_metric_op
+            'my_error': MetricSpec(
+                metric_fn=tf.contrib.metrics.streaming_mean_squared_error,
+                prediction_key='scores'),
+            'my_metric': MetricSpec(metric_fn=_my_metric_op,
+                                    prediction_key='scores')
         })
     self.assertIn('loss', set(scores.keys()))
     self.assertIn('my_error', set(scores.keys()))
@@ -1040,13 +1064,33 @@ class LinearRegressorTest(tf.test.TestCase):
         _sklearn.mean_squared_error(np.array([1, 0, 0, 0]), predictions),
         scores['my_error'])
 
-    # Tests that when the key is a tuple, an error is raised.
+    # Tests the case where the prediction_key is not "scores".
+    with self.assertRaisesRegexp(KeyError, 'bad_type'):
+      regressor.evaluate(
+          input_fn=_input_fn,
+          steps=1,
+          metrics={
+              'bad_name': MetricSpec(
+                  metric_fn=tf.contrib.metrics.streaming_auc,
+                  prediction_key='bad_type')})
+
+    # Tests the case where the 2nd element of the key is not "scores".
     with self.assertRaises(KeyError):
       regressor.evaluate(
           input_fn=_input_fn,
           steps=1,
           metrics={('my_error', 'predictions'
                    ): tf.contrib.metrics.streaming_mean_squared_error})
+
+    # Tests the case where the tuple of the key doesn't have 2 elements.
+    with self.assertRaises(ValueError):
+      regressor.evaluate(
+          input_fn=_input_fn,
+          steps=1,
+          metrics={
+              ('bad_length_name', 'scores', 'bad_length'):
+                  tf.contrib.metrics.streaming_mean_squared_error
+          })
 
   def testTrainSaveLoad(self):
     """Tests that insures you can save and reload a trained model."""
@@ -1056,7 +1100,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant([1.0, 0., 0.2], dtype=tf.float32)
 
@@ -1091,7 +1135,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant([1.0, 0., 0.2], dtype=tf.float32)
 
@@ -1103,14 +1147,22 @@ class LinearRegressorTest(tf.test.TestCase):
         tf.contrib.layers.real_valued_column('age')
     ]
 
+    tf_config = {
+        'cluster': {
+            tf.contrib.learn.TaskType.PS: ['fake_ps_0', 'fake_ps_1']
+        }
+    }
+    with tf.test.mock.patch.dict('os.environ',
+                                 {'TF_CONFIG': json.dumps(tf_config)}):
+      config = tf.contrib.learn.RunConfig(tf_random_seed=1)
+      # Because we did not start a distributed cluster, we need to pass an
+      # empty ClusterSpec, otherwise the device_setter will look for
+      # distributed jobs, such as "/job:ps" which are not present.
+      config._cluster_spec = tf.train.ClusterSpec({})
+
     regressor = tf.contrib.learn.LinearRegressor(
         feature_columns=feature_columns,
-        # Because we did not start a distributed cluster, we need to pass an
-        # empty ClusterSpec, otherwise the device_setter will look for
-        # distributed jobs, such as "/job:ps" which are not present.
-        config=tf.contrib.learn.RunConfig(
-            num_ps_replicas=2, cluster_spec=tf.train.ClusterSpec({}),
-            tf_random_seed=1))
+        config=config)
 
     regressor.fit(input_fn=_input_fn, steps=100)
 
@@ -1125,7 +1177,7 @@ class LinearRegressorTest(tf.test.TestCase):
                                        num_epochs=num_epochs),
           'language': tf.SparseTensor(values=['en', 'fr', 'zh'],
                                       indices=[[0, 0], [0, 1], [2, 0]],
-                                      shape=[3, 2])
+                                      dense_shape=[3, 2])
       }
       return features, tf.constant([1.0, 0., 0.2], dtype=tf.float32)
 
@@ -1201,7 +1253,7 @@ class LinearRegressorTest(tf.test.TestCase):
           'country': tf.SparseTensor(
               values=['IT', 'US', 'GB'],
               indices=[[0, 0], [1, 3], [2, 1]],
-              shape=[3, 5]),
+              dense_shape=[3, 5]),
           'weights': tf.constant([[3.0], [5.0], [7.0]])
       }, tf.constant([[1.55], [-1.25], [-3.0]])
 
@@ -1233,7 +1285,7 @@ class LinearRegressorTest(tf.test.TestCase):
           'country': tf.SparseTensor(
               values=['IT', 'US', 'GB'],
               indices=[[0, 0], [1, 3], [2, 1]],
-              shape=[3, 5]),
+              dense_shape=[3, 5]),
           'weights': tf.constant([[10.0], [10.0], [10.0]])
       }, tf.constant([[1.4], [-0.8], [2.6]])
 

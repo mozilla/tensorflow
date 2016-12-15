@@ -30,7 +30,7 @@ tf_gen_op_libs(
 
 tf_gen_op_wrapper_py(
     name = "bucketization_op",
-    deps = ["//tensorflow/contrib/layers:bucketization_op_op_lib"],
+    deps = [":bucketization_op_op_lib"],
 )
 
 tf_kernel_library(
@@ -59,7 +59,7 @@ tf_gen_op_libs(
 
 tf_gen_op_wrapper_py(
     name = "sparse_feature_cross_op",
-    deps = ["//tensorflow/contrib/layers:sparse_feature_cross_op_op_lib"],
+    deps = [":sparse_feature_cross_op_op_lib"],
 )
 
 tf_kernel_library(
@@ -73,7 +73,24 @@ tf_kernel_library(
 
 py_library(
     name = "layers_py",
-    srcs = ["__init__.py"] + glob(["python/ops/*.py"]) + glob(["python/layers/*.py"]),
+    srcs = [
+        "__init__.py",
+        "python/layers/__init__.py",
+        "python/layers/embedding_ops.py",
+        "python/layers/encoders.py",
+        "python/layers/feature_column.py",
+        "python/layers/feature_column_ops.py",
+        "python/layers/initializers.py",
+        "python/layers/layers.py",
+        "python/layers/optimizers.py",
+        "python/layers/regularizers.py",
+        "python/layers/summaries.py",
+        "python/layers/target_column.py",
+        "python/layers/utils.py",
+        "python/ops/bucketization_op.py",
+        "python/ops/sparse_feature_cross_op.py",
+        "python/ops/sparse_ops.py",
+    ],
     data = [
         ":python/ops/_bucketization_op.so",
         ":python/ops/_sparse_feature_cross_op.so",
@@ -87,7 +104,7 @@ py_library(
 
 cuda_py_test(
     name = "layers_test",
-    size = "small",
+    size = "medium",
     srcs = ["python/layers/layers_test.py"],
     additional_deps = [
         ":layers_py",

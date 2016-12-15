@@ -388,7 +388,7 @@ cuda_py_tests(
 
 cuda_py_tests(
     name = "bijector_test",
-    size = "small",
+    size = "medium",
     srcs = ["python/kernel_tests/bijector_test.py"],
     additional_deps = [
         ":distributions_py",
@@ -396,6 +396,7 @@ cuda_py_tests(
         "//tensorflow/python:framework_test_lib",
         "//tensorflow/python:platform_test",
     ],
+    shard_count = 5,
 )
 
 filegroup(

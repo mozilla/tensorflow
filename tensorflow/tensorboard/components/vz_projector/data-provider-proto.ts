@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-import {DataPoint, DataProto, DataSet, MetadataInfo, PointMetadata, State} from './data';
+import {DataPoint, DataProto, DataSet, SpriteAndMetadataInfo, PointMetadata, State} from './data';
 import {analyzeMetadata, ProjectorConfig, DataProvider} from './data-provider';
 
 
@@ -44,8 +44,8 @@ export class ProtoDataProvider implements DataProvider {
     callback(this.flatArrayToDataset(this.dataProto.tensor));
   }
 
-  retrieveMetadata(run: string, tensorName: string,
-      callback: (r: MetadataInfo) => void): void {
+  retrieveSpriteAndMetadata(run: string, tensorName: string,
+      callback: (r: SpriteAndMetadataInfo) => void): void {
     let columnNames = this.dataProto.metadata.columns.map(c => c.name);
     let n = this.dataProto.shape[0];
     let pointsMetadata: PointMetadata[] = new Array(n);
@@ -62,10 +62,6 @@ export class ProtoDataProvider implements DataProvider {
     });
   }
 
-  getDefaultTensor(run: string, callback: (tensorName: string) => void): void {
-    callback('proto');
-  }
-
   getBookmarks(run: string, tensorName: string,
       callback: (r: State[]) => void): void {
     return callback([]);
@@ -79,16 +75,11 @@ export class ProtoDataProvider implements DataProvider {
       throw 'The shape doesn\'t match the length of the flattened array';
     }
     for (let i = 0; i < n; i++) {
-      let vector: number[] = [];
       let offset = i * d;
-      for (let j = 0; j < d; j++) {
-        vector.push(tensor[offset++]);
-      }
       points.push({
-        vector: vector,
+        vector: new Float32Array(tensor.slice(offset, offset + d)),
         metadata: {},
         projections: null,
-        projectedPoint: null,
         index: i
       });
     }

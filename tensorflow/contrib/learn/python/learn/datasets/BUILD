@@ -13,9 +13,13 @@ filegroup(
 
 py_library(
     name = "datasets",
-    srcs = glob([
-        "*.py",
-    ]),
+    srcs = [
+        "__init__.py",
+        "base.py",
+        "mnist.py",
+        "produce_small_datasets.py",
+        "text_datasets.py",
+    ],
     data = [":data_csv"],
     srcs_version = "PY2AND3",
 )
@@ -42,6 +46,18 @@ filegroup(
         ],
     ),
     visibility = ["//tensorflow:__subpackages__"],
+)
+
+py_test(
+    name = "base_test",
+    size = "small",
+    srcs = ["base_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/contrib/learn",
+        "//tensorflow/python:framework_test_lib",
+    ],
 )
 
 py_test(

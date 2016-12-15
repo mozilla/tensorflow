@@ -19,40 +19,25 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python import summary
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import sparse_tensor
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import io_ops
-from tensorflow.python.ops import logging_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import variables as var_ops
 from tensorflow.python.platform import gfile
-from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import input as input_ops
 from tensorflow.python.training import queue_runner
 
 
 # Default name for key in the feature dict.
 KEY_FEATURE_NAME = '__key__'
-
-
-def _check_enqueue_params(num_queue_runners, num_enqueue_threads):
-  """Check enqueue paramerters for deprecation of `num_queue_runners`."""
-  if num_queue_runners is not None:
-    # TODO(yifanchen): Remove on Nov 21 2016.
-    logging.warning('`num_queue_runners` is deprecated, it will be removed on '
-                    'Nov 21 2016')
-    if num_enqueue_threads is not None:
-      raise ValueError('`num_queue_runners` and `num_enqueue_threads` can not '
-                       'both be set.')
-  elif num_enqueue_threads is None:
-    logging.warning('Default behavior will change and `num_queue_runners` '
-                    'will be replaced by `num_enqueue_threads`.')
-    num_queue_runners = 2
-  return num_queue_runners, num_enqueue_threads
 
 
 def read_batch_examples(file_pattern, batch_size, reader,
@@ -83,7 +68,7 @@ def read_batch_examples(file_pattern, batch_size, reader,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If `None`, cycles through the dataset forever.
       NOTE - If specified, creates a variable that must be initialized, so call
-      `tf.initialize_all_variables()` as shown in the tests.
+      `tf.global_variables_initializer()` as shown in the tests.
     queue_capacity: Capacity for input queue.
     num_threads: The number of threads enqueuing examples.
     read_batch_size: An int or scalar `Tensor` specifying the number of
@@ -135,7 +120,7 @@ def read_keyed_batch_examples(
     num_epochs: Integer specifying the number of times to read through the
       dataset. If `None`, cycles through the dataset forever.
       NOTE - If specified, creates a variable that must be initialized, so call
-      `tf.initialize_all_variables()` as shown in the tests.
+      `tf.global_variables_initializer()` as shown in the tests.
     queue_capacity: Capacity for input queue.
     num_threads: The number of threads enqueuing examples.
     read_batch_size: An int or scalar `Tensor` specifying the number of
@@ -204,7 +189,7 @@ def _read_keyed_batch_examples_shared_queue(file_pattern,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If `None`, cycles through the dataset forever.
       NOTE - If specified, creates a variable that must be initialized, so call
-      `tf.initialize_all_variables()` as shown in the tests.
+      `tf.global_variables_initializer()` as shown in the tests.
     queue_capacity: Capacity for input queue.
     num_threads: The number of threads enqueuing examples.
     read_batch_size: An int or scalar `Tensor` specifying the number of
@@ -239,8 +224,7 @@ def _get_shared_file_name_queue(file_names, shuffle, num_epochs, name):
   # Creating a dummy variable so we can put the shared queue in ps if there is
   # a PS and in the worker otherwise. TODO(rohanj): Figure out how to place an
   # op on PS without this hack
-  with ops.Graph().as_default():
-    dummy_var = var_ops.Variable(initial_value=0, name='dummy_var')
+  dummy_var = var_ops.Variable(initial_value=0, name='queue_placement_var')
   with ops.device(dummy_var.device):
     shared_file_name_queue = input_ops.string_input_producer(
         constant_op.constant(
@@ -248,7 +232,8 @@ def _get_shared_file_name_queue(file_names, shuffle, num_epochs, name):
         shuffle=shuffle,
         num_epochs=num_epochs,
         name=name,
-        shared_name=name)
+        shared_name=name,
+        cancel_op=control_flow_ops.no_op())
     return shared_file_name_queue
 
 
@@ -328,7 +313,7 @@ def _read_keyed_batch_examples_helper(file_pattern,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If `None`, cycles through the dataset forever.
       NOTE - If specified, creates a variable that must be initialized, so call
-      `tf.initialize_all_variables()` as shown in the tests.
+      `tf.global_variables_initializer()` as shown in the tests.
     queue_capacity: Capacity for input queue.
     num_threads: The number of threads enqueuing examples.
     read_batch_size: An int or scalar `Tensor` specifying the number of
@@ -426,8 +411,7 @@ def read_keyed_batch_features(file_pattern,
                               queue_capacity=10000,
                               reader_num_threads=1,
                               feature_queue_capacity=100,
-                              num_queue_runners=None,
-                              num_enqueue_threads=None,
+                              num_enqueue_threads=2,
                               parse_fn=None,
                               name=None):
   """Adds operations to read, queue, batch and parse `Example` protos.
@@ -454,21 +438,14 @@ def read_keyed_batch_features(file_pattern,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If None, cycles through the dataset forever. NOTE - If specified,
       creates a variable that must be initialized, so call
-      tf.initialize_local_variables() as shown in the tests.
+      tf.local_variables_initializer() as shown in the tests.
     queue_capacity: Capacity for input queue.
     reader_num_threads: The number of threads to read examples.
     feature_queue_capacity: Capacity of the parsed features queue.
-    num_queue_runners: Deprecated. Defaults to 2 if this and
-      `num_enqueue_threads` are both `None`. This is the number of queue
-      runners to start for the feature queue. Adding multiple queue runners for
-      the parsed example queue helps maintain a full queue when the subsequent
-      computations overall are cheaper than parsing. This argument will be
-      deprecated and replaced with `num_enqueue_threads`.
     num_enqueue_threads: Number of threads to enqueue the parsed example queue.
       Using multiple threads to enqueue the parsed example queue helps maintain
       a full queue when the subsequent computations overall are cheaper than
-      parsing. This argument will replace `num_queue_runners`. This and
-      `num_queue_runners` can not both be set.
+      parsing.
     parse_fn: Parsing function, takes `Example` Tensor returns parsed
       representation. If `None`, no parsing is done.
     name: Name of resulting op.
@@ -482,9 +459,6 @@ def read_keyed_batch_features(file_pattern,
     ValueError: for invalid inputs.
   """
 
-  num_queue_runners, num_enqueue_threads = _check_enqueue_params(
-      num_queue_runners, num_enqueue_threads)
-
   with ops.name_scope(name, 'read_batch_features', [file_pattern]) as scope:
     keys, examples = read_keyed_batch_examples(
         file_pattern, batch_size, reader, randomize_input=randomize_input,
@@ -497,7 +471,6 @@ def read_keyed_batch_features(file_pattern,
         feature_map,
         keys=keys,
         feature_queue_capacity=feature_queue_capacity,
-        num_queue_runners=num_queue_runners,
         num_enqueue_threads=num_enqueue_threads,
         name=scope)
 
@@ -539,12 +512,12 @@ def _read_keyed_batch_features_shared_queue(file_pattern,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If None, cycles through the dataset forever. NOTE - If specified,
       creates a variable that must be initialized, so call
-      tf.initialize_local_variables() as shown in the tests.
+      tf.local_variables_initializer() as shown in the tests.
     queue_capacity: Capacity for input queue.
     reader_num_threads: The number of threads to read examples.
     feature_queue_capacity: Capacity of the parsed features queue.
-    num_queue_runners: Number of queue runners to start for the feature queue,
-      Adding multiple queue runners for the parsed example queue helps maintain
+    num_queue_runners: Number of threads to enqueue the parsed example queue.
+      Using multiple threads to enqueue the parsed example queue helps maintain
       a full queue when the subsequent computations overall are cheaper than
       parsing.
     parse_fn: Parsing function, takes `Example` Tensor returns parsed
@@ -561,7 +534,7 @@ def _read_keyed_batch_features_shared_queue(file_pattern,
   """
 
   with ops.name_scope(name, 'read_batch_features', [file_pattern]) as scope:
-    keys, examples = read_keyed_batch_examples_shared_queue(
+    keys, examples = _read_keyed_batch_examples_shared_queue(
         file_pattern,
         batch_size,
         reader,
@@ -578,15 +551,14 @@ def _read_keyed_batch_features_shared_queue(file_pattern,
         feature_map,
         keys=keys,
         feature_queue_capacity=feature_queue_capacity,
-        num_queue_runners=num_queue_runners,
+        num_enqueue_threads=num_queue_runners,
         name=scope)
 
 
 def queue_parsed_features(parsed_features,
                           keys=None,
                           feature_queue_capacity=100,
-                          num_queue_runners=None,
-                          num_enqueue_threads=None,
+                          num_enqueue_threads=2,
                           name=None):
   """Speeds up parsing by using queues to do it asynchronously.
 
@@ -605,17 +577,10 @@ def queue_parsed_features(parsed_features,
     parsed_features: A dict of string key to `Tensor` or `SparseTensor` objects.
     keys: `Tensor` of string keys.
     feature_queue_capacity: Capacity of the parsed features queue.
-    num_queue_runners: Deprecated. Defaults to 2 if this and
-      `num_enqueue_threads` are both `None`. This is the number of queue
-      runners to start for the feature queue. Adding multiple queue runners for
-      the parsed example queue helps maintain a full queue when the subsequent
-      computations overall are cheaper than parsing. This argument will be
-      deprecated and replaced with `num_enqueue_threads`.
     num_enqueue_threads: Number of threads to enqueue the parsed example queue.
       Using multiple threads to enqueue the parsed example queue helps maintain
       a full queue when the subsequent computations overall are cheaper than
-      parsing. This argument will replace `num_queue_runners`. This and
-      `num_queue_runners` can not both be set.
+      parsing.
     name: Name of resulting op.
 
   Returns:
@@ -626,8 +591,6 @@ def queue_parsed_features(parsed_features,
   Raises:
     ValueError: for invalid inputs.
   """
-  num_queue_runners, num_enqueue_threads = _check_enqueue_params(
-      num_queue_runners, num_enqueue_threads)
 
   args = list(parsed_features.values())
   if keys is not None:
@@ -646,9 +609,10 @@ def queue_parsed_features(parsed_features,
     # directly.
     for key in sorted(parsed_features.keys()):
       tensor = parsed_features[key]
-      if isinstance(tensor, ops.SparseTensor):
+      if isinstance(tensor, sparse_tensor.SparseTensor):
         tensors_mapping.append((key, True))
-        tensors_to_enqueue.extend([tensor.indices, tensor.values, tensor.shape])
+        tensors_to_enqueue.extend([
+            tensor.indices, tensor.values, tensor.dense_shape])
       else:
         tensors_mapping.append((key, False))
         tensors_to_enqueue.append(tensor)
@@ -660,38 +624,20 @@ def queue_parsed_features(parsed_features,
     input_queue = data_flow_ops.FIFOQueue(feature_queue_capacity, queue_dtypes)
 
     # Add a summary op to debug if our feature queue is full or not.
-    logging_ops.scalar_summary('queue/parsed_features/%s/fraction_of_%d_full' %
-                               (input_queue.name, feature_queue_capacity),
-                               math_ops.cast(input_queue.size(), dtypes.float32)
-                               * (1. / feature_queue_capacity))
+    summary.scalar('queue/parsed_features/%s/fraction_of_%d_full' %
+                   (input_queue.name, feature_queue_capacity),
+                   math_ops.cast(input_queue.size(), dtypes.float32) *
+                   (1. / feature_queue_capacity))
 
-    # Add multiple queue runners so that the queue is always full. Adding more
-    # than two queue-runners may hog the cpu on the worker to fill up the queue.
-    #
-    # Note: this can result in large last batch being lost as the multiple queue
-    # runner threads do not coordinate with each other. Please use
-    # `num_enqueue_threads` instead.
-    if num_queue_runners is not None:
-      for _ in range(num_queue_runners):
-        queue_runner.add_queue_runner(
-            queue_runner.QueueRunner(
-                input_queue, [input_queue.enqueue(tensors_to_enqueue)],
-                queue_closed_exception_types=(errors.OutOfRangeError,
-                                              errors.CancelledError)))
     # Use a single QueueRunner with multiple threads to enqueue so the queue is
     # always full. The threads are coordinated so the last batch will not be
     # lost.
-    elif num_enqueue_threads is not None:
-      enqueue_ops = [input_queue.enqueue(tensors_to_enqueue)
-                     for _ in range(num_enqueue_threads)]
-      queue_runner.add_queue_runner(queue_runner.QueueRunner(
-          input_queue, enqueue_ops,
-          queue_closed_exception_types=(errors.OutOfRangeError,
-                                        errors.CancelledError)))
-    else:
-      raise AssertionError(
-          'Either `num_queue_runners` or `num_enqueue_threads` should have '
-          'been set.')
+    enqueue_ops = [input_queue.enqueue(tensors_to_enqueue)
+                   for _ in range(num_enqueue_threads)]
+    queue_runner.add_queue_runner(queue_runner.QueueRunner(
+        input_queue, enqueue_ops,
+        queue_closed_exception_types=(errors.OutOfRangeError,
+                                      errors.CancelledError)))
 
     dequeued_tensors = input_queue.dequeue()
 
@@ -705,7 +651,7 @@ def queue_parsed_features(parsed_features,
     for key, is_sparse_tensor in tensors_mapping:
       if is_sparse_tensor:
         # Three tensors are (indices, values, shape).
-        dequeued_parsed_features[key] = ops.SparseTensor(
+        dequeued_parsed_features[key] = sparse_tensor.SparseTensor(
             dequeued_tensors[index], dequeued_tensors[index + 1],
             dequeued_tensors[index + 2])
         index += 3
@@ -755,7 +701,7 @@ def read_batch_features(file_pattern,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If None, cycles through the dataset forever. NOTE - If specified,
       creates a variable that must be initialized, so call
-      tf.initialize_local_variables() as shown in the tests.
+      tf.local_variables_initializer() as shown in the tests.
     queue_capacity: Capacity for input queue.
     feature_queue_capacity: Capacity of the parsed features queue. Set this
       value to a small number, for example 5 if the parsed features are large.
@@ -798,7 +744,7 @@ def read_batch_record_features(file_pattern, batch_size, features,
     num_epochs: Integer specifying the number of times to read through the
       dataset. If None, cycles through the dataset forever. NOTE - If specified,
       creates a variable that must be initialized, so call
-      tf.initialize_local_variables() as shown in the tests.
+      tf.local_variables_initializer() as shown in the tests.
     queue_capacity: Capacity for input queue.
     reader_num_threads: The number of threads to read examples.
     name: Name of resulting op.

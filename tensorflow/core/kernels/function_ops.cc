@@ -87,6 +87,30 @@ class RetvalOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(Name("_Arg").Device(DEVICE_CPU), ArgOp);
 REGISTER_KERNEL_BUILDER(Name("_Retval").Device(DEVICE_CPU), RetvalOp);
 
+#if TENSORFLOW_USE_SYCL
+#define REGISTER(type)     \
+  REGISTER_KERNEL_BUILDER( \
+      Name("_Arg").Device(DEVICE_SYCL).TypeConstraint<type>("T"), ArgOp);
+TF_CALL_NUMBER_TYPES_NO_INT32(REGISTER)
+TF_CALL_bool(REGISTER) REGISTER_KERNEL_BUILDER(Name("_Arg")
+                                                   .Device(DEVICE_SYCL)
+                                                   .HostMemory("output")
+                                                   .TypeConstraint<int32>("T"),
+                                               ArgOp);
+#undef REGISTER
+#define REGISTER(type)                                               \
+  REGISTER_KERNEL_BUILDER(                                           \
+      Name("_Retval").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
+      RetvalOp);
+TF_CALL_NUMBER_TYPES_NO_INT32(REGISTER)
+TF_CALL_bool(REGISTER) REGISTER_KERNEL_BUILDER(Name("_Retval")
+                                                   .Device(DEVICE_SYCL)
+                                                   .HostMemory("input")
+                                                   .TypeConstraint<int32>("T"),
+                                               RetvalOp);
+#undef REGISTER
+#endif
+
 #define REGISTER(type)     \
   REGISTER_KERNEL_BUILDER( \
       Name("_Arg").Device(DEVICE_GPU).TypeConstraint<type>("T"), ArgOp);
@@ -214,5 +238,9 @@ REGISTER_KERNEL_BUILDER(Name(kGradientOp).Device(DEVICE_CPU),
                         SymbolicGradientOp);
 REGISTER_KERNEL_BUILDER(Name(kGradientOp).Device(DEVICE_GPU),
                         SymbolicGradientOp);
+#if TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name(kGradientOp).Device(DEVICE_SYCL),
+                        SymbolicGradientOp);
 
+#endif // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

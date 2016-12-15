@@ -80,7 +80,7 @@ class SparseTensorsMapTest(tf.test.TestCase):
       handle0 = add_sparse_to_tensors_map(sp_input0, shared_name="a")
       handle1 = add_sparse_to_tensors_map(sp_input1, shared_name="a")
       self.assertEqual(handle0.get_shape(), ())
-      handles_concat = tf.pack([handle0, handle1])
+      handles_concat = tf.stack([handle0, handle1])
 
       sp_out = take_many_sparse_from_tensors_map(
           sparse_map_op=handle0.op, sparse_handles=handles_concat)
@@ -138,11 +138,11 @@ class SparseTensorsMapTest(tf.test.TestCase):
           [handles, roundtrip],
           feed_dict={sparse_tensor.indices: indices_value,
                      sparse_tensor.values: values_value,
-                     sparse_tensor.shape: shape_value})
+                     sparse_tensor.dense_shape: shape_value})
       self.assertEqual(handles_value.shape, (4,))
       self.assertAllEqual(roundtrip_value.indices, indices_value)
       self.assertAllEqual(roundtrip_value.values, values_value)
-      self.assertAllEqual(roundtrip_value.shape, shape_value)
+      self.assertAllEqual(roundtrip_value.dense_shape, shape_value)
 
   def testDeserializeFailsInconsistentRank(self):
     with self.test_session(use_gpu=False) as sess:
@@ -211,7 +211,7 @@ class BenchmarkSparseTensorsMapVsSerialization(tf.test.Benchmark):
             st_serialized, dtype=values.dtype)
         st_deserialized_op = st_deserialized.values.op
 
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
 
         st_roundtrip_values = sess.run(st_roundtrip)
         st_deserialized_values = sess.run(st_deserialized)
@@ -220,7 +220,7 @@ class BenchmarkSparseTensorsMapVsSerialization(tf.test.Benchmark):
         np.testing.assert_equal(
             st_roundtrip_values.indices, st_deserialized_values.indices)
         np.testing.assert_equal(
-            st_roundtrip_values.shape, st_deserialized_values.shape)
+            st_roundtrip_values.dense_shape, st_deserialized_values.dense_shape)
 
         self.run_op_benchmark(
             sess, st_roundtrip_op, min_iters=2000,

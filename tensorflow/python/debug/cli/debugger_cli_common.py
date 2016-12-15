@@ -24,6 +24,8 @@ import traceback
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
+from tensorflow.python.platform import gfile
+
 HELP_INDENT = "  "
 
 EXPLICIT_USER_EXIT = "explicit_user_exit"
@@ -94,10 +96,12 @@ class RichTextLines(object):
     self._font_attr_segs = font_attr_segs
     if not self._font_attr_segs:
       self._font_attr_segs = {}
+      # TODO(cais): Refactor to collections.defaultdict(list) to simplify code.
 
     self._annotations = annotations
     if not self._annotations:
       self._annotations = {}
+      # TODO(cais): Refactor to collections.defaultdict(list) to simplify code.
 
   @property
   def lines(self):
@@ -153,6 +157,55 @@ class RichTextLines(object):
 
     return RichTextLines(
         lines, font_attr_segs=font_attr_segs, annotations=annotations)
+
+  def extend(self, other):
+    """Extend this instance of RichTextLines with another instance.
+
+    The extension takes effect on the text lines, the font attribute segments,
+    as well as the annotations. The line indices in the font attribute
+    segments and the annotations are adjusted to account for the existing
+    lines. If there are duplicate, non-line-index fields in the annotations,
+    the value from the input argument "other" will override that in this
+    instance.
+
+    Args:
+      other: (RichTextLines) The other RichTextLines instance to be appended at
+        the end of this instance.
+    """
+
+    orig_num_lines = self.num_lines()  # Record original number of lines.
+
+    # Merge the lines.
+    self._lines.extend(other.lines)
+
+    # Merge the font_attr_segs.
+    for line_index in other.font_attr_segs:
+      self._font_attr_segs[orig_num_lines + line_index] = (
+          other.font_attr_segs[line_index])
+
+    # Merge the annotations.
+    for key in other.annotations:
+      if isinstance(key, int):
+        self._annotations[orig_num_lines + key] = (other.annotations[key])
+      else:
+        self._annotations[key] = other.annotations[key]
+
+  # TODO(cais): Add method append of the signature:
+  #   def append_line(line, line_font_attr_segs)
+  # and refactor usage in stepper_cli.py.
+
+  def write_to_file(self, file_path):
+    """Write the object itself to file, in a plain format.
+
+    The font_attr_segs and annotations are ignored.
+
+    Args:
+      file_path: (str) path of the file to write to.
+    """
+
+    with gfile.Open(file_path, "w") as f:
+      for line in self._lines:
+        f.write(line + "\n")
 
 
 def regex_find(orig_screen_output, regex, font_attr):
@@ -223,11 +276,15 @@ def wrap_rich_text_lines(inp, cols):
     cols: Number of columns, as an int.
 
   Returns:
-    A new instance of RichTextLines, with line lengths limited to cols.
-
+    1) A new instance of RichTextLines, with line lengths limited to cols.
+    2) A list of new (wrapped) line index. For example, if the original input
+      consists of three lines and only the second line is wrapped, and it's
+      wrapped into two lines, this return value will be: [0, 1, 3].
   Raises:
     ValueError: If inputs have invalid types.
   """
+
+  new_line_indices = []
 
   if not isinstance(inp, RichTextLines):
     raise ValueError("Invalid type of input screen_output")
@@ -239,6 +296,8 @@ def wrap_rich_text_lines(inp, cols):
 
   row_counter = 0  # Counter for new row index
   for i in xrange(len(inp.lines)):
+    new_line_indices.append(out.num_lines())
+
     line = inp.lines[i]
 
     if i in inp.annotations:
@@ -298,7 +357,7 @@ def wrap_rich_text_lines(inp, cols):
     if not isinstance(key, int):
       out.annotations[key] = inp.annotations[key]
 
-  return out
+  return out, new_line_indices
 
 
 class CommandHandlerRegistry(object):
@@ -505,18 +564,19 @@ class CommandHandlerRegistry(object):
     """
     if not cmd_prefix:
       # Print full help information, in sorted order of the command prefixes.
-      lines = []
+      help_info = RichTextLines([])
       if self._help_intro:
         # If help intro is available, show it at the beginning.
-        lines.extend(self._help_intro)
+        help_info.extend(self._help_intro)
 
       sorted_prefixes = sorted(self._handlers)
       for cmd_prefix in sorted_prefixes:
-        lines.extend(self._get_help_for_command_prefix(cmd_prefix))
+        lines = self._get_help_for_command_prefix(cmd_prefix)
         lines.append("")
         lines.append("")
+        help_info.extend(RichTextLines(lines))
 
-      return RichTextLines(lines)
+      return help_info
     else:
       return RichTextLines(self._get_help_for_command_prefix(cmd_prefix))
 
@@ -524,7 +584,7 @@ class CommandHandlerRegistry(object):
     """Set an introductory message to help output.
 
     Args:
-      help_intro: (list of str) Text lines appended to the beginning of the
+      help_intro: (RichTextLines) Rich text lines appended to the
         beginning of the output of the command "help", as introductory
         information.
     """
