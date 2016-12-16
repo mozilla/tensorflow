@@ -177,7 +177,7 @@ def main(unused_argv):
       else:
         replicas_to_aggregate = FLAGS.replicas_to_aggregate
 
-      opt = tf.train.SyncReplicasOptimizerV2(
+      opt = tf.train.SyncReplicasOptimizer(
           opt,
           replicas_to_aggregate=replicas_to_aggregate,
           total_num_replicas=num_workers,
@@ -196,7 +196,7 @@ def main(unused_argv):
       chief_queue_runner = opt.get_chief_queue_runner()
       sync_init_op = opt.get_init_tokens_op()
 
-    init_op = tf.initialize_all_variables()
+    init_op = tf.global_variables_initializer()
     train_dir = tempfile.mkdtemp()
 
     if FLAGS.sync_replicas:

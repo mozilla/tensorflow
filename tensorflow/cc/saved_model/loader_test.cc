@@ -29,9 +29,10 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 
-constexpr char kTestDataPbTxt[] = "cc/saved_model/testdata/half_plus_two_pbtxt";
+constexpr char kTestDataPbTxt[] =
+    "cc/saved_model/testdata/half_plus_two_pbtxt/00000123";
 constexpr char kTestDataSharded[] =
-    "cc/saved_model/testdata/half_plus_two_sharded";
+    "cc/saved_model/testdata/half_plus_two/00000123";
 
 class LoaderTest : public ::testing::Test {
  protected:
@@ -50,7 +51,7 @@ class LoaderTest : public ::testing::Test {
         io::JoinPath(export_dir, kSavedModelAssetsDirectory);
     const string asset_filename = "foo.txt";
     const string asset_filepath = io::JoinPath(asset_directory, asset_filename);
-    EXPECT_TRUE(Env::Default()->FileExists(asset_filepath));
+    TF_EXPECT_OK(Env::Default()->FileExists(asset_filepath));
 
     std::vector<Tensor> path_outputs;
     TF_ASSERT_OK(
@@ -189,7 +190,7 @@ TEST_F(LoaderTest, MaybeSavedModelDirectory) {
 
   // Directory that exists but is an invalid SavedModel location.
   const string invalid_export_dir =
-      io::JoinPath(testing::TensorFlowSrcRoot(), "cc/saved_model/testdata");
+      io::JoinPath(testing::TensorFlowSrcRoot(), "cc/saved_model");
   EXPECT_FALSE(MaybeSavedModelDirectory(invalid_export_dir));
 }
 

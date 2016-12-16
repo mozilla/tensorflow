@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python import summary
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
@@ -386,7 +387,7 @@ def _calculate_acceptance_probabilities(init_probs, target_probs):
   ratio_l = target_probs / init_probs
 
   # Replace NaNs with 0s.
-  ratio_l = math_ops.select(math_ops.is_nan(ratio_l),
+  ratio_l = array_ops.where(math_ops.is_nan(ratio_l),
                             array_ops.zeros_like(ratio_l),
                             ratio_l)
 
@@ -426,7 +427,7 @@ def _conditional_batch(tensors, keep_input, batch_size, num_threads=10):
                                     shapes=shapes_list,
                                     dtypes=dtypes_list,
                                     name='batched_queue')
-  logging_ops.scalar_summary('queue/%s/size' % final_q.name, final_q.size())
+  summary.scalar('queue/%s/size' % final_q.name, final_q.size())
 
   # Conditionally enqueue.
   # Reshape enqueue op to match no_op's shape.

@@ -47,6 +47,26 @@ def _make_streaming_with_threshold(streaming_metrics_fn, threshold):
 
 class LogisticRegressor(estimator.Estimator):
   """Logistic regression Estimator for binary classification.
+
+  This class provides a basic Estimator with some additional metrics for custom
+  binary classification models, including AUC, precision/recall and accuracy.
+
+  Example:
+
+  ```python
+    # See tf.contrib.learn.Estimator(...) for details on model_fn structure
+    def my_model_fn(...):
+      pass
+
+    estimator = LogisticRegressor(model_fn=my_model_fn)
+
+    # Input builders
+    def input_fn_train:
+      pass
+
+    estimator.fit(input_fn=input_fn_train)
+    estimator.predict(x=x)
+  ```
   """
 
   def __init__(self, model_fn, thresholds=None, model_dir=None, config=None,
@@ -130,29 +150,34 @@ class LogisticRegressor(estimator.Estimator):
                batch_size=None,
                steps=None,
                metrics=None,
-               name=None):
+               name=None,
+               checkpoint_path=None):
     """Evaluates given model with provided evaluation data.
 
     See superclass Estimator for more details.
 
     Args:
       x: features.
-      y: labels.
+      y: labels (must be 0 or 1).
       input_fn: Input function.
       feed_fn: Function creating a feed dict every time it is called.
       batch_size: minibatch size to use on the input.
       steps: Number of steps for which to evaluate model.
       metrics: Dict of metric ops to run. If None, the default metrics are used.
       name: Name of the evaluation.
+      checkpoint_path: A specific checkpoint to use. By default, use the latest
+        checkpoint in the `model_dir`.
 
     Returns:
       Returns `dict` with evaluation results.
     """
     metrics = metrics or self.get_default_metrics(thresholds=self._thresholds)
-    return super(LogisticRegressor, self).evaluate(x=x,
-                                                   y=y,
-                                                   input_fn=input_fn,
-                                                   batch_size=batch_size,
-                                                   steps=steps,
-                                                   metrics=metrics,
-                                                   name=name)
+    return super(LogisticRegressor, self).evaluate(
+        x=x,
+        y=y,
+        input_fn=input_fn,
+        batch_size=batch_size,
+        steps=steps,
+        metrics=metrics,
+        name=name,
+        checkpoint_path=checkpoint_path)
