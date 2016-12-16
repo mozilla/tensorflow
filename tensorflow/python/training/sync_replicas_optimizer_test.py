@@ -20,15 +20,14 @@ from __future__ import print_function
 
 import time
 
+import portpicker
 import tensorflow as tf
-
-from tensorflow.python.util import net_lib
 
 
 def create_local_cluster(num_workers, num_ps, protocol="grpc"):
   """Create local GRPC servers and return them."""
-  worker_ports = [net_lib.pick_unused_port_or_die() for _ in range(num_workers)]
-  ps_ports = [net_lib.pick_unused_port_or_die() for _ in range(num_ps)]
+  worker_ports = [portpicker.pick_unused_port() for _ in range(num_workers)]
+  ps_ports = [portpicker.pick_unused_port() for _ in range(num_ps)]
   cluster_dict = {
       "worker": ["localhost:%s" % port for port in worker_ports],
       "ps": ["localhost:%s" % port for port in ps_ports]}
@@ -68,17 +67,17 @@ def get_workers(num_workers, replicas_to_aggregate, workers):
         # This is to test against sparse gradients.
         grads_sparse = tf.IndexedSlices(
             tf.constant([0.1+worker_id*0.2], shape=[1, 1]),
-            tf.constant([1], dtype=tf.int64),
-            tf.constant([2, 1], dtype=tf.int64))
+            tf.constant([1]),
+            tf.constant([2, 1]))
         sgd_opt = tf.train.GradientDescentOptimizer(2.0)
-        sync_rep_opt = tf.train.SyncReplicasOptimizerV2(
+        sync_rep_opt = tf.train.SyncReplicasOptimizer(
             sgd_opt, replicas_to_aggregate=replicas_to_aggregate,
             total_num_replicas=num_workers)
         train_op = [sync_rep_opt.apply_gradients(
             zip([grads_0, grads_1, grads_sparse], [var_0, var_1, var_sparse]),
             global_step=global_step)]
 
-        init_op = tf.initialize_all_variables()
+        init_op = tf.global_variables_initializer()
         # Needed ops from the sync_rep optimizer. This is mainly for the
         # local_step initialization.
         local_init_op = sync_rep_opt.local_step_init_op
@@ -112,7 +111,7 @@ def get_workers(num_workers, replicas_to_aggregate, workers):
   return sessions, graphs, train_ops
 
 
-class SyncReplicasOptimizerV2Test(tf.test.TestCase):
+class SyncReplicasOptimizerTest(tf.test.TestCase):
 
   def _run(self, train_op, sess):
     sess.run(train_op)
@@ -237,6 +236,9 @@ class SyncReplicasOptimizerV2Test(tf.test.TestCase):
     # The global step should have been updated since we only need to collect 2
     # gradients. The variables should now have the new values after the average
     # of the gradients from worker 0/2 are applied.
+    while global_step.eval(session=sessions[1]) != 1:
+      time.sleep(0.01)
+
     self.assertAllEqual(1, global_step.eval(session=sessions[1]))
     self.assertAllClose(0-(0.1+0.5)/2*2.0, var_0_g_1.eval(session=sessions[1]))
     self.assertAllClose(1-(0.9+1.3)/2*2.0, var_1_g_1.eval(session=sessions[1]))

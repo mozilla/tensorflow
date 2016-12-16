@@ -274,19 +274,15 @@ Status SimpleGraphExecutionState::InitBaseGraph(
   return Status::OK();
 }
 
-void SimpleGraphExecutionState::UpdateCostsFromStats(const StepStats& ss) {
-  mutex_lock l(mu_);
-  costs_.MergeFromStats(node_name_to_cost_id_map_, ss);
-}
-
-void SimpleGraphExecutionState::MergeCostsFromGlobal(CostModel* costs) {
-  mutex_lock l(mu_);
-  costs->MergeFromGlobal(costs_);
-}
-
 Status SimpleGraphExecutionState::BuildGraph(
     const BuildGraphOptions& options, std::unique_ptr<SimpleClientGraph>* out) {
   VLOG(1) << "BuildGraph";
+  if (!graph_) {
+    // It is only valid to call this method directly when the original graph
+    // was created with the option `place_pruned_graph == false`.
+    return errors::Internal(
+        "Attempted to prune a graph that has not been fully initialized.");
+  }
   std::unique_ptr<Graph> ng(new Graph(flib_def_.get()));
   CopyGraph(*graph_, ng.get());
 

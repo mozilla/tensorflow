@@ -239,19 +239,6 @@ bool IsFullSlice(const TensorSlice& slice_spec,
 
 }  // namespace
 
-string DataFilename(StringPiece prefix, int32 shard_id, int32 num_shards) {
-  DCHECK_GT(num_shards, 0);
-  DCHECK_LT(shard_id, num_shards);
-  return strings::Printf("%.*s.data-%05d-of-%05d",
-                         static_cast<int>(prefix.size()), prefix.data(),
-                         shard_id, num_shards);
-}
-
-string MetaFilename(StringPiece prefix) {
-  return strings::Printf("%.*s.index", static_cast<int>(prefix.size()),
-                         prefix.data());
-}
-
 BundleWriter::BundleWriter(Env* env, StringPiece prefix)
     : env_(env), prefix_(prefix.ToString()), out_(nullptr), size_(0) {
   status_ =
@@ -356,7 +343,11 @@ Status BundleWriter::Finish() {
   status_ = env_->NewWritableFile(MetaFilename(prefix_), &file);
   if (!status_.ok()) return status_;
   {
-    table::TableBuilder builder(table::Options(), file.get());
+    // N.B.: the default use of Snappy compression may not be supported on all
+    // platforms (e.g. Android).  The metadata file is small, so this is fine.
+    table::Options options;
+    options.compression = table::kNoCompression;
+    table::TableBuilder builder(options, file.get());
     // Header entry.
     BundleHeaderProto header;
     header.set_num_shards(1);

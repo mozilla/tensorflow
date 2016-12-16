@@ -78,7 +78,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
   def testDense(self):
     # TODO(yori): Use ParameterizedTest when available
     for dtype, learning_rate, decay, momentum, epsilon, centered in _TESTPARAMS:
-      with self.test_session():
+      with self.test_session(use_gpu=True):
         # Initialize variables for numpy implementation.
         var0_np = np.array([1.0, 2.0], dtype=dtype.as_numpy_dtype)
         grads0_np = np.array([0.1, 0.2], dtype=dtype.as_numpy_dtype)
@@ -97,7 +97,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
             centered=centered)
 
         update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
 
         mg0 = opt.get_slot(var0, "mg")
         self.assertEqual(mg0 is not None, centered)
@@ -148,7 +148,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
   def testSparse(self):
     # TODO(yori): Use ParameterizedTest when available
     for dtype, learning_rate, decay, momentum, epsilon, centered in _TESTPARAMS:
-      with self.test_session():
+      with self.test_session(use_gpu=True):
         # Initialize variables for numpy implementation.
         var0_np = np.array([1.0, 2.0], dtype=dtype.as_numpy_dtype)
         grads0_np = np.array([0.1], dtype=dtype.as_numpy_dtype)
@@ -172,7 +172,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
             epsilon=epsilon,
             centered=centered)
         update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
 
         mg0 = opt.get_slot(var0, "mg")
         self.assertEqual(mg0 is not None, centered)
@@ -222,7 +222,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
 
   def testWithoutMomentum(self):
     for dtype in [tf.half, tf.float32]:
-      with self.test_session():
+      with self.test_session(use_gpu=True):
         var0 = tf.Variable([1.0, 2.0], dtype=dtype)
         var1 = tf.Variable([3.0, 4.0], dtype=dtype)
         grads0 = tf.constant([0.1, 0.1], dtype=dtype)
@@ -230,7 +230,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
         opt = tf.train.RMSPropOptimizer(
             learning_rate=2.0, decay=0.9, momentum=0.0, epsilon=1.0)
         update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
 
         rms0 = opt.get_slot(var0, "rms")
         self.assertTrue(rms0 is not None)
@@ -283,7 +283,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
 
   def testWithMomentum(self):
     for dtype in [tf.half, tf.float32]:
-      with self.test_session():
+      with self.test_session(use_gpu=True):
         var0 = tf.Variable([1.0, 2.0], dtype=dtype)
         var1 = tf.Variable([3.0, 4.0], dtype=dtype)
         grads0 = tf.constant([0.1, 0.1], dtype=dtype)
@@ -292,7 +292,7 @@ class RMSPropOptimizerTest(tf.test.TestCase):
         opt = tf.train.RMSPropOptimizer(
             learning_rate=2.0, decay=0.9, momentum=0.5, epsilon=1e-5)
         update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-        tf.initialize_all_variables().run()
+        tf.global_variables_initializer().run()
 
         rms0 = opt.get_slot(var0, "rms")
         self.assertTrue(rms0 is not None)

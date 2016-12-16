@@ -166,7 +166,7 @@ use the `specs.ops` context manager, which will temporarily make the
     outputs = net.funcall(inputs)
 
     sess = tf.InteractiveSession()
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer().run()
     sess.run([outputs], feed_dict={inputs: npr.uniform(size=(17, 28, 28, 1))})
 
 # Sharing and Variables
@@ -206,25 +206,6 @@ number of imports that look like they are in modules, but they are
 actually just values placed in the namespace somehow. The `Import`
 function takes an arbitrary Python statement that eventually needs to
 assign a value to the variable `f` that is then wrapped up as a function.
-
-# AutoFunction
-
-Not all functions available in TensorFlow have corresponding short names
-in specs; in order to access other functions conveniently, you can refer
-to any function in a number of existing modules using the full function
-name in that module.  Module shortcuts are defined for:
-
- - `TF` = `tf`
- - `NN` = `tf.nn`
- - `SL` = `slim`
-
-You can, of course, introduce more abbreviations in your own code.
-
-These are defined as:
-
-    TF = specs_lib.AutoFunction(tf)
-
-Using these definitions, `SL.conv2d(64, 5)` is equivalent to `Cr(64, 5)`.
 
 # Summaries
 

@@ -1,9 +1,63 @@
-Exact match for the pre-1.0 tf.train.SummaryWriter.
+
 - - -
 
-#### `tf.train.SummaryWriter.__init__(logdir, graph=None, max_queue=10, flush_secs=120, graph_def=None)` {#SummaryWriter.__init__}
+#### `tf.train.SummaryWriter.__init__(*args, **kwargs)` {#SummaryWriter.__init__}
+
+Creates a `SummaryWriter` and an event file. (deprecated)
+
+THIS FUNCTION IS DEPRECATED. It will be removed after 2016-11-30.
+Instructions for updating:
+Please switch to tf.summary.FileWriter. The interface and behavior is the same; this is just a rename.
+
+    This class is deprecated, and should be replaced with tf.summary.FileWriter.
+
+    On construction the summary writer creates a new event file in `logdir`.
+    This event file will contain `Event` protocol buffers constructed when you
+    call one of the following functions: `add_summary()`, `add_session_log()`,
+    `add_event()`, or `add_graph()`.
+
+    If you pass a `Graph` to the constructor it is added to
+    the event file. (This is equivalent to calling `add_graph()` later).
+
+    TensorBoard will pick the graph from the file and display it graphically so
+    you can interactively explore the graph you built. You will usually pass
+    the graph from the session in which you launched it:
+
+    ```python
+    ...create a graph...
+    # Launch the graph in a session.
+    sess = tf.Session()
+    # Create a summary writer, add the 'graph' to the event file.
+    writer = tf.train.SummaryWriter(<some-directory>, sess.graph)
+    ```
+
+    The other arguments to the constructor control the asynchronous writes to
+    the event file:
+
+    *  `flush_secs`: How often, in seconds, to flush the added summaries
+       and events to disk.
+    *  `max_queue`: Maximum number of summaries or events pending to be
+       written to disk before one of the 'add' calls block.
+
+    Args:
+      logdir: A string. Directory where event file will be written.
+      graph: A `Graph` object, such as `sess.graph`.
+      max_queue: Integer. Size of the queue for pending events and summaries.
+      flush_secs: Number. How often, in seconds, to flush the
+        pending events and summaries to disk.
+      graph_def: DEPRECATED: Use the `graph` argument instead.
 
 
+- - -
+
+#### `tf.train.SummaryWriter.add_event(event)` {#SummaryWriter.add_event}
+
+Adds an event to the event file.
+
+##### Args:
+
+
+*  <b>`event`</b>: An `Event` protocol buffer.
 
 
 - - -
@@ -111,5 +165,43 @@ commonly done to report evaluation results in event files.
 *  <b>`summary`</b>: A `Summary` protocol buffer, optionally serialized as a string.
 *  <b>`global_step`</b>: Number. Optional global step value to record with the
     summary.
+
+
+- - -
+
+#### `tf.train.SummaryWriter.close()` {#SummaryWriter.close}
+
+Flushes the event file to disk and close the file.
+
+Call this method when you do not need the summary writer anymore.
+
+
+- - -
+
+#### `tf.train.SummaryWriter.flush()` {#SummaryWriter.flush}
+
+Flushes the event file to disk.
+
+Call this method to make sure that all pending events have been written to
+disk.
+
+
+- - -
+
+#### `tf.train.SummaryWriter.get_logdir()` {#SummaryWriter.get_logdir}
+
+Returns the directory where event file will be written.
+
+
+- - -
+
+#### `tf.train.SummaryWriter.reopen()` {#SummaryWriter.reopen}
+
+Reopens the EventFileWriter.
+
+Can be called after `close()` to add more events in the same directory.
+The events will go into a new events file.
+
+Does nothing if the EventFileWriter was not closed.
 
 

@@ -136,7 +136,7 @@ class SliceOp : public OpKernel {
       return;
     }
 
-    if (slice_dim0 && IsInnerDimsSizeAligned<T>(input.shape())) {
+    if (slice_dim0 && IsDim0SliceAligned<T>(input.shape(), begin[0], size[0])) {
       VLOG(1) << "Slice dim 0: " << input.shape().DebugString();
       CHECK_GE(input.dims(), 1);  // Otherwise, is_identity should be true.
       context->set_output(0, input.Slice(begin[0], begin[0] + size[0]));
@@ -236,7 +236,7 @@ DECLARE_FOR_N(bfloat16);
                               .HostMemory("size"),       \
                           SliceOp<CPUDevice, type>)
 
-TF_CALL_ALL_TYPES(REGISTER_SLICE);
+TF_CALL_POD_STRING_TYPES(REGISTER_SLICE);
 REGISTER_SLICE(bfloat16);
 
 #undef REGISTER_SLICE
