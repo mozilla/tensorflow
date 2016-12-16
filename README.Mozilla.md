@@ -37,8 +37,8 @@ $ pip install --upgrade URL
 
 For the current version being built, 0.12.0rc1, this should also be a stable
 and direct link:
-* CPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.cpu/artifacts/public/tensorflow-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
-* GPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.gpu/artifacts/public/tensorflow-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
+* CPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.cpu/artifacts/public/tensorflow_warpctc-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
+* GPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.gpu/artifacts/public/tensorflow_gpu_warpctc-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
 
 # System setup
 
