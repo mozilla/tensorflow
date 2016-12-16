@@ -36,10 +36,10 @@ from tensorflow.python.ops.nn_grad import _BroadcastMul
 # NOTE(ebrevdo): We redefine CTCLoss from gen_ctc_ops to only return
 # the first output. The second output is only used for the gradient.
 # pylint: disable=protected-access, invalid-name
-def warp_ctc_loss(inputs, labels, sequence_length,
+def warp_ctc_loss(labels, inputs, sequence_length,
                   preprocess_collapse_repeated=False, ctc_merge_repeated=True):
-  if not isinstance(labels, ops.SparseTensor):
-    raise TypeError("Expected labels to be a SparseTensor")
+  if not isinstance(labels, sparse_tensor.SparseTensor):
+    raise TypeError("Expected labels (first argument) to be a SparseTensor")
 
   tmps1 = tf.slice(inputs, [0, 0, 0], [-1, -1, int(tf.Tensor.get_shape(inputs)[2] - 1)])
   tmps2 = tf.slice(inputs, [0, 0, int(tf.Tensor.get_shape(inputs)[2] - 1)], [-1, -1, 1])
