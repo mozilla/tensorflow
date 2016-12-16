@@ -35,10 +35,10 @@ Pick the URL to the "tensorflow-VERSION-py2-none-any.whl" and pass it to PIP:
 $ pip install --upgrade URL
 ```
 
-For the current version being built, 0.11.0rc1, this should also be a stable
+For the current version being built, 0.12.0rc1, this should also be a stable
 and direct link:
-* CPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.cpu/artifacts/public/tensorflow-0.11.0rc1-py2-none-any.whl
-* GPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.gpu/artifacts/public/tensorflow-0.11.0rc1-py2-none-any.whl
+* CPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.cpu/artifacts/public/tensorflow-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
+* GPU: https://index.taskcluster.net/v1/task/project.deepspeech.tensorflow.pip.warpctc.gpu/artifacts/public/tensorflow-0.12.0rc1-cp27-cp27mu-linux_x86_64.whl
 
 # System setup
 
@@ -80,10 +80,10 @@ index 3ce6b74..be726ff 100644
 NB: On recent distros, please install older GCC (4.9) and change GCC_HOST_COMPILER_PATH=/usr/bin/gcc to GCC_HOST_COMPILER_PATH=/usr/bin/gcc-4.9
 
 ## CPU Only:
-* ``echo "" | PATH=$HOME/DeepSpeech/bin/:$PATH PYTHON_BIN_PATH=$HOME/DeepSpeech/tf-venv/bin/python PYTHONPATH=$HOME/DeepSpeech/tf-venv/lib/python2.7/ TF_NEED_GCP=0 TF_NEED_HDFS=0 GCC_HOST_COMPILER_PATH=/usr/bin/gcc TF_NEED_CUDA=0 ./configure``
+* ``echo "" | PATH=$HOME/DeepSpeech/bin/:$PATH PYTHON_BIN_PATH=$HOME/DeepSpeech/tf-venv/bin/python PYTHONPATH=$HOME/DeepSpeech/tf-venv/lib/python2.7/ TF_NEED_GCP=0 TF_NEED_HDFS=0 GCC_HOST_COMPILER_PATH=/usr/bin/gcc TF_NEED_CUDA=0 TF_NEED_OPENCL=0 ./configure``
 
 ## GPU Support:
-* ``echo "" | PATH=$HOME/DeepSpeech/bin/:$PATH PYTHON_BIN_PATH=$HOME/DeepSpeech/tf-venv/bin/python PYTHONPATH=$HOME/DeepSpeech/tf-venv/lib/python2.7/ TF_NEED_GCP=0 TF_NEED_HDFS=0 GCC_HOST_COMPILER_PATH=/usr/bin/gcc TF_NEED_CUDA=1 TF_CUDA_VERSION=8.0 TF_CUDNN_VERSION=5.1 CUDA_TOOLKIT_PATH=$HOME/DeepSpeech/CUDA CUDNN_INSTALL_PATH=$HOME/DeepSpeech/CUDA TF_CUDA_COMPUTE_CAPABILITIES="3.0,3.5,3.7,5.2,6.0,6.1" ./configure``
+* ``echo "" | PATH=$HOME/DeepSpeech/bin/:$PATH PYTHON_BIN_PATH=$HOME/DeepSpeech/tf-venv/bin/python PYTHONPATH=$HOME/DeepSpeech/tf-venv/lib/python2.7/ TF_NEED_GCP=0 TF_NEED_HDFS=0 GCC_HOST_COMPILER_PATH=/usr/bin/gcc TF_NEED_CUDA=1 TF_NEED_OPENCL=0 TF_CUDA_VERSION=8.0 TF_CUDNN_VERSION=5.1 CUDA_TOOLKIT_PATH=$HOME/DeepSpeech/CUDA CUDNN_INSTALL_PATH=$HOME/DeepSpeech/CUDA TF_CUDA_COMPUTE_CAPABILITIES="3.0,3.5,3.7,5.2,6.0,6.1" ./configure``
 
 The configure step will take some time as it downloads a lot of dependencies.
 
