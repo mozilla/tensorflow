@@ -14,6 +14,7 @@ licenses(["notice"])  # Apache 2.0
 exports_files(["LICENSE"])
 
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+load("//tensorflow:tensorflow.bzl", "py_test")
 
 py_library(
     name = "debug_py",
@@ -22,6 +23,7 @@ py_library(
     deps = [
         ":debug_data",
         ":debug_utils",
+        ":hooks",
         ":local_cli_wrapper",
     ],
 )
@@ -30,6 +32,10 @@ py_library(
     name = "debug_data",
     srcs = ["debug_data.py"],
     srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:framework",
+        "//tensorflow/python:platform",
+    ],
 )
 
 py_library(
@@ -42,11 +48,25 @@ py_library(
 )
 
 py_library(
+    name = "stepper",
+    srcs = ["stepper.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":debug_data",
+        "//tensorflow/python:data_flow_ops",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:session_ops",
+    ],
+)
+
+py_library(
     name = "framework",
     srcs = ["wrappers/framework.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":debug_utils",
+        ":stepper",
+        "//tensorflow/python:errors",
         "//tensorflow/python:session",
     ],
 )
@@ -55,6 +75,7 @@ py_library(
     name = "debugger_cli_common",
     srcs = ["cli/debugger_cli_common.py"],
     srcs_version = "PY2AND3",
+    deps = ["//tensorflow/python:platform"],
 )
 
 py_library(
@@ -71,13 +92,42 @@ py_library(
 )
 
 py_library(
+    name = "cli_shared",
+    srcs = ["cli/cli_shared.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":command_parser",
+        ":debugger_cli_common",
+        ":tensor_format",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:variables",
+    ],
+)
+
+py_library(
     name = "analyzer_cli",
     srcs = ["cli/analyzer_cli.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":cli_shared",
         ":command_parser",
+        ":curses_ui",
         ":debug_data",
         ":debugger_cli_common",
+        ":tensor_format",
+    ],
+)
+
+py_library(
+    name = "stepper_cli",
+    srcs = ["cli/stepper_cli.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":cli_shared",
+        ":command_parser",
+        ":debugger_cli_common",
+        ":stepper",
         ":tensor_format",
     ],
 )
@@ -99,17 +149,51 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         ":analyzer_cli",
+        ":cli_shared",
         ":curses_ui",
         ":debug_data",
         ":debugger_cli_common",
         ":framework",
+        ":stepper_cli",
         "//tensorflow/python:session",
+    ],
+)
+
+py_library(
+    name = "hooks",
+    srcs = ["wrappers/hooks.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":debug_utils",
+        ":framework",
+        ":local_cli_wrapper",
+        ":stepper",
+        "//tensorflow/python:session",
+        "//tensorflow/python:training",
+    ],
+)
+
+py_binary(
+    name = "offline_analyzer",
+    srcs = ["cli/offline_analyzer.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":analyzer_cli",
+        ":debug_data",
+        "//tensorflow/python:platform",
     ],
 )
 
 py_binary(
     name = "debug_fibonacci",
     srcs = ["examples/debug_fibonacci.py"],
+    srcs_version = "PY2AND3",
+    deps = ["//tensorflow:tensorflow_py"],
+)
+
+py_binary(
+    name = "debug_errors",
+    srcs = ["examples/debug_errors.py"],
     srcs_version = "PY2AND3",
     deps = ["//tensorflow:tensorflow_py"],
 )
@@ -124,6 +208,13 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "debug_tflearn_iris",
+    srcs = ["examples/debug_tflearn_iris.py"],
+    srcs_version = "PY2AND3",
+    deps = ["//tensorflow:tensorflow_py"],
+)
+
 py_test(
     name = "debug_data_test",
     size = "small",
@@ -135,6 +226,7 @@ py_test(
         ":debug_data",
         "//tensorflow/python:framework",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
     ],
 )
 
@@ -148,9 +240,31 @@ py_test(
     deps = [
         ":debug_utils",
         "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
         "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
         "//tensorflow/python:session",
+        "//tensorflow/python:variables",
+    ],
+)
+
+cuda_py_test(
+    name = "stepper_test",
+    size = "small",
+    srcs = [
+        "stepper_test.py",
+    ],
+    additional_deps = [
+        ":stepper",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:session",
+        "//tensorflow/python:training",
         "//tensorflow/python:variables",
     ],
 )
@@ -163,9 +277,14 @@ py_test(
     deps = [
         ":debug_data",
         ":framework",
+        ":stepper",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:errors",
         "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
         "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
         "//tensorflow/python:session",
         "//tensorflow/python:variables",
     ],
@@ -184,22 +303,47 @@ py_test(
         ":tensor_format",
         "//tensorflow/python:framework",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:platform_test",
+    ],
+)
+
+py_library(
+    name = "session_debug_testlib",
+    srcs = ["session_debug_testlib.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":debug_data",
+        ":debug_utils",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:control_flow_ops",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:session",
+        "//tensorflow/python:state_ops",
+        "//tensorflow/python:variables",
     ],
 )
 
 cuda_py_test(
-    name = "session_debug_test",
+    name = "session_debug_file_test",
     size = "small",
-    srcs = [
-        "session_debug_test.py",
-    ],
+    srcs = ["session_debug_file_test.py"],
     additional_deps = [
         ":debug_data",
         ":debug_utils",
-        "//tensorflow:tensorflow_py",
-        "//tensorflow/python:framework",
+        ":session_debug_testlib",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
         "//tensorflow/python:session",
+        "//tensorflow/python:variables",
     ],
 )
 
@@ -213,6 +357,8 @@ py_test(
     deps = [
         ":debugger_cli_common",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:platform_test",
     ],
 )
 
@@ -226,6 +372,7 @@ py_test(
     deps = [
         ":command_parser",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
     ],
 )
 
@@ -239,6 +386,25 @@ py_test(
     deps = [
         ":tensor_format",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
+    ],
+)
+
+py_test(
+    name = "cli_shared_test",
+    size = "small",
+    srcs = [
+        "cli/cli_shared_test.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":cli_shared",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:variables",
     ],
 )
 
@@ -254,9 +420,36 @@ cuda_py_test(
         ":debug_utils",
         ":debugger_cli_common",
         "//tensorflow:tensorflow_py",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
         "//tensorflow/python:session",
+        "//tensorflow/python:variables",
+    ],
+)
+
+cuda_py_test(
+    name = "stepper_cli_test",
+    size = "small",
+    srcs = [
+        "cli/stepper_cli_test.py",
+    ],
+    additional_deps = [
+        ":stepper",
+        ":stepper_cli",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:session",
+        "//tensorflow/python:training",
+        "//tensorflow/python:variables",
     ],
 )
 
@@ -268,9 +461,16 @@ py_test(
     ],
     srcs_version = "PY2AND3",
     deps = [
+        ":debugger_cli_common",
         ":local_cli_wrapper",
-        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:session",
+        "//tensorflow/python:state_ops",
+        "//tensorflow/python:variables",
     ],
 )
 

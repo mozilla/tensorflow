@@ -118,6 +118,10 @@ class GraphMgr {
     // A graph is partitioned over multiple devices.  Each partition
     // has a root executor which may call into the runtime library.
     std::vector<ExecutionUnit> units;
+
+    // Used to deresgister a cost model when cost model is requried in graph
+    // manager.
+    GraphMgr* graph_mgr;
   };
 
   // Not owned.
@@ -136,7 +140,7 @@ class GraphMgr {
   // mechanism to gc these graphs.
   std::unordered_map<string, Item*> table_;
 
-  void StartParallelExecutors(const string& handle, Item* item,
+  void StartParallelExecutors(const string& handle, int64 step_id, Item* item,
                               Rendezvous* rendezvous,
                               StepStatsCollector* collector,
                               CostGraphDef* cost_graph,

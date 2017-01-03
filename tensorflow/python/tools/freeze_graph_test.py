@@ -40,7 +40,7 @@ class FreezeGraphTest(test_util.TensorFlowTestCase):
       variable_node = tf.Variable(1.0, name="variable_node")
       output_node = tf.mul(variable_node, 2.0, name="output_node")
       sess = tf.Session()
-      init = tf.initialize_all_variables()
+      init = tf.global_variables_initializer()
       sess.run(init)
       output = sess.run(output_node)
       self.assertNear(2.0, output, 0.00001)
@@ -76,6 +76,7 @@ class FreezeGraphTest(test_util.TensorFlowTestCase):
 
       self.assertEqual(4, len(output_graph_def.node))
       for node in output_graph_def.node:
+        self.assertNotEqual("VariableV2", node.op)
         self.assertNotEqual("Variable", node.op)
 
       with tf.Session() as sess:

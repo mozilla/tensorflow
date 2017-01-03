@@ -16,7 +16,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <unordered_map>
+#include "tensorflow/core/lib/gtl/flatmap.h"
+#include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/util/port.h"
@@ -81,11 +82,8 @@ class PendingCounts {
   }
   void mark_started(int id) {
     if (IsLarge(id)) {
-      auto& pending = overflow_[id].pending;
-      DCHECK_EQ(pending, 0);
-      pending = -1;
+      overflow_[id].pending = -1;
     } else {
-      DCHECK_EQ(counts_[id].pending, 0);
       DCHECK_EQ(counts_[id].has_started, 0);
       counts_[id].has_started = 1;
     }
@@ -96,7 +94,6 @@ class PendingCounts {
       DCHECK_EQ(pending, -1);
       pending = -2;
     } else {
-      DCHECK_EQ(counts_[id].pending, 0);
       DCHECK_EQ(counts_[id].has_started, 1);
       counts_[id].pending = 1;
     }
@@ -239,7 +236,7 @@ class PendingCounts {
 
   const int num_nodes_;  // Just for bounds checking in debug mode
   PackedCounts* counts_;
-  std::unordered_map<int, LargeCounts> overflow_;
+  gtl::FlatMap<int, LargeCounts> overflow_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(PendingCounts);
 };

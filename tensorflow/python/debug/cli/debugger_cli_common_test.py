@@ -17,8 +17,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
+import tempfile
+
 from tensorflow.python.debug.cli import debugger_cli_common
 from tensorflow.python.framework import test_util
+from tensorflow.python.platform import gfile
 from tensorflow.python.platform import googletest
 
 
@@ -93,6 +97,138 @@ class RichTextLinesTest(test_util.TensorFlowTestCase):
 
     screen_output.lines.append("Sugar is sweet")
     self.assertEqual(3, len(screen_output.lines))
+
+  def testMergeRichTextLines(self):
+    screen_output_1 = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]},
+        annotations={0: "longer wavelength",
+                     1: "shorter wavelength"})
+    screen_output_2 = debugger_cli_common.RichTextLines(
+        ["Lilies are white", "Sunflowers are yellow"],
+        font_attr_segs={0: [(0, 6, "white")],
+                        1: [(0, 7, "yellow")]},
+        annotations={
+            "metadata": "foo",
+            0: "full spectrum",
+            1: "medium wavelength"
+        })
+
+    screen_output_1.extend(screen_output_2)
+
+    self.assertEqual(4, screen_output_1.num_lines())
+    self.assertEqual([
+        "Roses are red", "Violets are blue", "Lilies are white",
+        "Sunflowers are yellow"
+    ], screen_output_1.lines)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+        2: [(0, 6, "white")],
+        3: [(0, 7, "yellow")]
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+        2: [(0, 6, "white")],
+        3: [(0, 7, "yellow")]
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        "metadata": "foo",
+        0: "longer wavelength",
+        1: "shorter wavelength",
+        2: "full spectrum",
+        3: "medium wavelength"
+    }, screen_output_1.annotations)
+
+  def testMergeRichTextLinesEmptyOther(self):
+    screen_output_1 = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]},
+        annotations={0: "longer wavelength",
+                     1: "shorter wavelength"})
+    screen_output_2 = debugger_cli_common.RichTextLines([])
+
+    screen_output_1.extend(screen_output_2)
+
+    self.assertEqual(2, screen_output_1.num_lines())
+    self.assertEqual(["Roses are red", "Violets are blue"],
+                     screen_output_1.lines)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        0: "longer wavelength",
+        1: "shorter wavelength",
+    }, screen_output_1.annotations)
+
+  def testMergeRichTextLinesEmptySelf(self):
+    screen_output_1 = debugger_cli_common.RichTextLines([])
+    screen_output_2 = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]},
+        annotations={0: "longer wavelength",
+                     1: "shorter wavelength"})
+
+    screen_output_1.extend(screen_output_2)
+
+    self.assertEqual(2, screen_output_1.num_lines())
+    self.assertEqual(["Roses are red", "Violets are blue"],
+                     screen_output_1.lines)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        0: [(0, 5, "red")],
+        1: [(0, 7, "blue")],
+    }, screen_output_1.font_attr_segs)
+    self.assertEqual({
+        0: "longer wavelength",
+        1: "shorter wavelength",
+    }, screen_output_1.annotations)
+
+  def testWriteToFileSucceeds(self):
+    screen_output = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]})
+
+    file_path = tempfile.mktemp()
+    screen_output.write_to_file(file_path)
+
+    with gfile.Open(file_path, "r") as f:
+      self.assertEqual(b"Roses are red\nViolets are blue\n", f.read())
+
+    # Clean up.
+    gfile.Remove(file_path)
+
+  def testAttemptToWriteToADirectoryFails(self):
+    screen_output = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]})
+
+    with self.assertRaises(Exception):
+      screen_output.write_to_file("/")
+
+  def testAttemptToWriteToFileInNonexistentDirectoryFails(self):
+    screen_output = debugger_cli_common.RichTextLines(
+        ["Roses are red", "Violets are blue"],
+        font_attr_segs={0: [(0, 5, "red")],
+                        1: [(0, 7, "blue")]})
+
+    file_path = os.path.join(tempfile.mkdtemp(), "foo", "bar.txt")
+    with self.assertRaises(Exception):
+      screen_output.write_to_file(file_path)
 
 
 class CommandHandlerRegistryTest(test_util.TensorFlowTestCase):
@@ -382,15 +518,16 @@ class CommandHandlerRegistryTest(test_util.TensorFlowTestCase):
         "No operation.\nI.e., do nothing.",
         prefix_aliases=["n", "NOOP"])
 
-    help_intro = ["Introductory comments.", ""]
+    help_intro = debugger_cli_common.RichTextLines(
+        ["Introductory comments.", ""])
     registry.set_help_intro(help_intro)
 
     output = registry.dispatch_command("help", [])
-    self.assertEqual(
-        help_intro + ["help", "  Aliases: h", "", "  Print this help message.",
-                      "", "", "noop", "  Aliases: n, NOOP", "",
-                      "  No operation.", "  I.e., do nothing.", "", ""],
-        output.lines)
+    self.assertEqual(help_intro.lines + [
+        "help", "  Aliases: h", "", "  Print this help message.", "", "",
+        "noop", "  Aliases: n, NOOP", "", "  No operation.",
+        "  I.e., do nothing.", "", ""
+    ], output.lines)
 
 
 class RegexFindTest(test_util.TensorFlowTestCase):
@@ -453,16 +590,18 @@ class WrapScreenOutputTest(test_util.TensorFlowTestCase):
 
   def testNoActualWrapping(self):
     # Large column limit should lead to no actual wrapping.
-    out = debugger_cli_common.wrap_rich_text_lines(self._orig_screen_output,
-                                                   100)
+    out, new_line_indices = debugger_cli_common.wrap_rich_text_lines(
+        self._orig_screen_output, 100)
 
     self.assertEqual(self._orig_screen_output.lines, out.lines)
     self.assertEqual(self._orig_screen_output.font_attr_segs,
                      out.font_attr_segs)
     self.assertEqual(self._orig_screen_output.annotations, out.annotations)
+    self.assertEqual(new_line_indices, [0, 1, 2])
 
   def testWrappingWithAttrCutoff(self):
-    out = debugger_cli_common.wrap_rich_text_lines(self._orig_screen_output, 11)
+    out, new_line_indices = debugger_cli_common.wrap_rich_text_lines(
+        self._orig_screen_output, 11)
 
     # Add non-row-index field to out.
     out.annotations["metadata"] = "foo"
@@ -493,6 +632,8 @@ class WrapScreenOutputTest(test_util.TensorFlowTestCase):
     # Chec that the non-row-index field is present in output.
     self.assertEqual("foo", out.annotations["metadata"])
 
+    self.assertEqual(new_line_indices, [0, 1, 3])
+
   def testWrappingWithMultipleAttrCutoff(self):
     self._orig_screen_output = debugger_cli_common.RichTextLines(
         ["Folk song:", "Roses are red", "Violets are blue"],
@@ -501,7 +642,8 @@ class WrapScreenOutputTest(test_util.TensorFlowTestCase):
         annotations={1: "longer wavelength",
                      2: "shorter wavelength"})
 
-    out = debugger_cli_common.wrap_rich_text_lines(self._orig_screen_output, 5)
+    out, new_line_indices = debugger_cli_common.wrap_rich_text_lines(
+        self._orig_screen_output, 5)
 
     # Check wrapped text.
     self.assertEqual(9, len(out.lines))
@@ -537,6 +679,8 @@ class WrapScreenOutputTest(test_util.TensorFlowTestCase):
     self.assertFalse(7 in out.annotations)
     self.assertFalse(8 in out.annotations)
 
+    self.assertEqual(new_line_indices, [0, 2, 5])
+
   def testWrappingInvalidArguments(self):
     with self.assertRaisesRegexp(ValueError,
                                  "Invalid type of input screen_output"):
@@ -546,8 +690,15 @@ class WrapScreenOutputTest(test_util.TensorFlowTestCase):
       debugger_cli_common.wrap_rich_text_lines(
           debugger_cli_common.RichTextLines(["foo", "bar"]), "12")
 
+  def testWrappingEmptyInput(self):
+    out, new_line_indices = debugger_cli_common.wrap_rich_text_lines(
+        debugger_cli_common.RichTextLines([]), 10)
 
-class SliceRichTextLinesText(test_util.TensorFlowTestCase):
+    self.assertEqual([], out.lines)
+    self.assertEqual([], new_line_indices)
+
+
+class SliceRichTextLinesTest(test_util.TensorFlowTestCase):
 
   def setUp(self):
     self._original = debugger_cli_common.RichTextLines(

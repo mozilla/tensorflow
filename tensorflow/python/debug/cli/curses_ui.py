@@ -44,6 +44,7 @@ class CursesUI(object):
   REGEX_SEARCH_PREFIX = "/"
   TENSOR_INDICES_NAVIGATION_PREFIX = "@"
   ERROR_MESSAGE_PREFIX = "ERROR: "
+  INFO_MESSAGE_PREFIX = "INFO: "
 
   # Possible Enter keys. 343 is curses key code for the num-pad Enter key when
   # num lock is off.
@@ -62,6 +63,7 @@ class CursesUI(object):
       "green": curses.COLOR_GREEN,
       "yellow": curses.COLOR_YELLOW,
       "blue": curses.COLOR_BLUE,
+      "cyan": curses.COLOR_CYAN,
       "magenta": curses.COLOR_MAGENTA,
       "black": curses.COLOR_BLACK,
   }
@@ -74,9 +76,16 @@ class CursesUI(object):
   _SEARCH_HIGHLIGHT_FONT_ATTR = "black_on_white"
   _ARRAY_INDICES_COLOR_PAIR = "black_on_white"
   _ERROR_TOAST_COLOR_PAIR = "red_on_white"
+  _INFO_TOAST_COLOR_PAIR = "blue_on_white"
   _STATUS_BAR_COLOR_PAIR = "black_on_white"
 
-  def __init__(self):
+  def __init__(self, on_ui_exit=None):
+    """Constructor of CursesUI.
+
+    Args:
+      on_ui_exit: (Callable) Callback invoked when the UI exits.
+    """
+
     self._screen_init()
     self._screen_refresh_size()
     # TODO(cais): Error out if the size of the screen is too small.
@@ -126,6 +135,9 @@ class CursesUI(object):
     # Register signal handler for SIGINT.
     signal.signal(signal.SIGINT, self._interrupt_handler)
 
+    # Configurable callbacks.
+    self._on_ui_exit = on_ui_exit
+
   def _init_layout(self):
     """Initialize the layout of UI components.
 
@@ -168,7 +180,7 @@ class CursesUI(object):
 
     # Regex search state.
     self._curr_search_regex = None
-    self._regex_match_lines = None
+    self._unwrapped_regex_match_lines = []
 
     # Size of view port on screen, which is always smaller or equal to the
     # screen size.
@@ -208,8 +220,10 @@ class CursesUI(object):
 
         self._color_pairs[color_name] = curses.color_pair(color_index)
 
-    # A_BOLD is not really a "color". But place it here for convenience.
+    # A_BOLD or A_BLINK is not really a "color". But place it here for
+    # convenience.
     self._color_pairs["bold"] = curses.A_BOLD
+    self._color_pairs["blink"] = curses.A_BLINK
 
     # Default color pair to use when a specified color pair does not exist.
     self._default_color_pair = self._color_pairs["white"]
@@ -270,6 +284,9 @@ class CursesUI(object):
     # CLI main loop.
     exit_token = self._ui_loop()
 
+    if self._on_ui_exit:
+      self._on_ui_exit()
+
     self._screen_terminate()
 
     return exit_token
@@ -310,7 +327,7 @@ class CursesUI(object):
     """Set an introductory message to the help output of the command registry.
 
     Args:
-      help_intro: (list of str) Text lines appended to the beginning of the
+      help_intro: (RichTextLines) Rich text lines appended to the beginning of
         the output of the command "help", as introductory information.
     """
 
@@ -433,7 +450,7 @@ class CursesUI(object):
 
         self._curr_search_regex = regex
         self._display_output(self._curr_unwrapped_output, highlight_regex=regex)
-      elif self._regex_match_lines:
+      elif self._unwrapped_regex_match_lines:
         # Command is "/". Continue scrolling down matching lines.
         self._display_output(
             self._curr_unwrapped_output,
@@ -448,7 +465,7 @@ class CursesUI(object):
       if indices_str:
         try:
           indices = command_parser.parse_indices(indices_str)
-          omitted, line_index = tensor_format.locate_tensor_element(
+          omitted, line_index, _, _ = tensor_format.locate_tensor_element(
               self._curr_wrapped_output, indices)
 
           if not omitted:
@@ -461,7 +478,11 @@ class CursesUI(object):
 
       return
 
-    prefix, args = self._parse_command(command)
+    try:
+      prefix, args, output_file_path = self._parse_command(command)
+    except SyntaxError as e:
+      self._error_toast(str(e))
+      return
 
     if not prefix:
       # Empty command: take no action. Should not exit.
@@ -488,6 +509,13 @@ class CursesUI(object):
       return exit_token
 
     self._display_output(screen_output)
+    if output_file_path:
+      try:
+        screen_output.write_to_file(output_file_path)
+        self._info_toast("Wrote output to %s" % output_file_path)
+      except Exception:  # pylint: disable=broad-except
+        self._error_toast("Failed to write output to %s" % output_file_path)
+
     self._command_pointer = 0
     self._pending_command = ""
 
@@ -501,13 +529,18 @@ class CursesUI(object):
       prefix: (str) The command prefix.
       args: (list of str) The command arguments (i.e., not including the
         prefix).
+      output_file_path: (str or None) The path to save the screen output
+        to (if any).
     """
     command = command.strip()
     if not command:
-      return "", []
+      return "", [], None
 
     command_items = command_parser.parse_command(command)
-    return command_items[0], command_items[1:]
+    command_items, output_file_path = command_parser.extract_output_file_path(
+        command_items)
+
+    return command_items[0], command_items[1:], output_file_path
 
   def _screen_gather_textbox_str(self):
     """Gather the text string in the command text box.
@@ -682,11 +715,15 @@ class CursesUI(object):
       output: (RichTextLines) text lines to display on the screen. These lines
         may have widths exceeding the screen width. This method will take care
         of the wrapping.
+
+    Returns:
+      (List of int) A list of line indices, in the wrapped output, where there
+        are regex matches.
     """
 
     # Wrap the output lines according to screen width.
-    self._curr_wrapped_output = debugger_cli_common.wrap_rich_text_lines(
-        output, self._max_x - 1)
+    self._curr_wrapped_output, wrapped_line_indices = (
+        debugger_cli_common.wrap_rich_text_lines(output, self._max_x - 1))
 
     # Append lines to curr_wrapped_output so that the user can scroll to a
     # state where the last text line is on the top of the output area.
@@ -706,13 +743,20 @@ class CursesUI(object):
      self._output_pad_width) = self._display_lines(self._curr_wrapped_output,
                                                    self._output_num_rows)
 
+    # The indices of lines with regex matches (if any) need to be mapped to
+    # indices of wrapped lines.
+    return [
+        wrapped_line_indices[line]
+        for line in self._unwrapped_regex_match_lines
+    ]
+
   def _display_output(self, output, is_refresh=False, highlight_regex=None):
     """Display text output in a scrollable text pad.
 
     This method does some preprocessing on the text lines, render them on the
     screen and scroll to the appropriate line. These are done according to regex
     highlighting requests (if any), scroll-to-next-match requests (if any),
-    and screen refrexh requests (if any).
+    and screen refresh requests (if any).
 
     TODO(cais): Separate these unrelated request to increase clarity and
       maintainability.
@@ -734,16 +778,17 @@ class CursesUI(object):
 
       if not is_refresh:
         # Perform new regex search on the current output.
-        self._regex_match_lines = output.annotations[
+        self._unwrapped_regex_match_lines = output.annotations[
             debugger_cli_common.REGEX_MATCH_LINES_KEY]
       else:
         # Continue scrolling down.
         self._output_pad_row += 1
     else:
       self._curr_unwrapped_output = output
+      self._unwrapped_regex_match_lines = []
 
     # Display output on the screen.
-    self._screen_display_output(output)
+    wrapped_regex_match_lines = self._screen_display_output(output)
 
     # Now that the text lines are displayed on the screen scroll to the
     # appropriate line according to previous scrolling state and regex search
@@ -751,7 +796,7 @@ class CursesUI(object):
 
     if highlight_regex:
       next_match_line = -1
-      for match_line in self._regex_match_lines:
+      for match_line in wrapped_regex_match_lines:
         if match_line >= self._output_pad_row:
           next_match_line = match_line
           break
@@ -925,10 +970,19 @@ class CursesUI(object):
 
     if self._output_pad_height > self._output_pad_screen_height + 1:
       # Display information about the scrolling of tall screen output.
-      self._scroll_info = "--- Scroll: %.2f%% " % (100.0 * (min(
+      scroll_percentage = 100.0 * (min(
           1.0,
           float(self._output_pad_row) /
-          (self._output_pad_height - self._output_pad_screen_height - 1))))
+          (self._output_pad_height - self._output_pad_screen_height - 1)))
+      if self._output_pad_row == 0:
+        scroll_directions = " (PgDn)"
+      elif self._output_pad_row >= (
+          self._output_pad_height - self._output_pad_screen_height - 1):
+        scroll_directions = " (PgUp)"
+      else:
+        scroll_directions = " (PgDn/PgUp)"
+      self._scroll_info = "--- Scroll%s: %.2f%% " % (scroll_directions,
+                                                     scroll_percentage)
 
       self._output_array_pointer_indices = self._show_array_indices()
 
@@ -1008,7 +1062,8 @@ class CursesUI(object):
     # Examine whether the index information is available for the specified line
     # number.
     pointer = self._output_pad_row + line_index
-    if pointer in self._curr_wrapped_output.annotations:
+    if (pointer in self._curr_wrapped_output.annotations and
+        "i0" in self._curr_wrapped_output.annotations[pointer]):
       indices = self._curr_wrapped_output.annotations[pointer]["i0"]
 
       array_indices_str = self._format_indices(indices)
@@ -1099,7 +1154,7 @@ class CursesUI(object):
             0: [(len(candidates_prefix), len(candidates_line), "yellow")]
         })
 
-    candidates_output = debugger_cli_common.wrap_rich_text_lines(
+    candidates_output, _ = debugger_cli_common.wrap_rich_text_lines(
         candidates_output, self._max_x - 2)
 
     # Calculate how many lines the candidate text should occupy. Limit it to
@@ -1149,6 +1204,16 @@ class CursesUI(object):
 
     self._toast(
         self.ERROR_MESSAGE_PREFIX + message, color=self._ERROR_TOAST_COLOR_PAIR)
+
+  def _info_toast(self, message):
+    """Display a one-line informational message on screen.
+
+    Args:
+      message: The informational message.
+    """
+
+    self._toast(
+        self.INFO_MESSAGE_PREFIX + message, color=self._INFO_TOAST_COLOR_PAIR)
 
   def _interrupt_handler(self, signal_num, frame):
     _ = signal_num  # Unused.

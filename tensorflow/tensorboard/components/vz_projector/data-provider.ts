@@ -13,12 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-import {ColumnStats, DataPoint, DataSet, MetadataInfo, PointMetadata, State} from './data';
+import {ColumnStats, DataPoint, DataSet, SpriteAndMetadataInfo, PointMetadata, State} from './data';
 import * as logging from './logging';
 import {runAsyncTask} from './util';
 
 /** Maximum number of colors supported in the color map. */
-const NUM_COLORS_COLOR_MAP = 20;
+const NUM_COLORS_COLOR_MAP = 50;
+const MAX_SPRITE_IMAGE_SIZE_PX = 8192;
 
 export const METADATA_MSG_ID = 'metadata';
 export const TENSORS_MSG_ID = 'tensors';
@@ -47,10 +48,15 @@ export interface EmbeddingInfo {
   sprite?: SpriteMetadata;
 }
 
-/** Matches the json format of `projector_config.proto` */
+/**
+ * Matches the json format of `projector_config.proto`
+ * This should be kept in sync with the code in vz-projector-data-panel which
+ * holds a template for users to build a projector config JSON object from the
+ * projector UI.
+ */
 export interface ProjectorConfig {
   embeddings: EmbeddingInfo[];
-  modelCheckpointPath: string;
+  modelCheckpointPath?: string;
 }
 
 export type ServingMode = 'demo' | 'server' | 'proto';
@@ -74,18 +80,54 @@ export interface DataProvider {
   /**
    * Fetches the metadata for the specified tensor.
    */
-  retrieveMetadata(run: string, tensorName: string,
-      callback: (r: MetadataInfo) => void): void;
-
-  /**
-   * Returns the name of the tensor that should be fetched by default.
-   * Used in demo mode to load a tensor when the app starts. Returns null if no
-   * default tensor exists.
-   */
-  getDefaultTensor(run: string, callback: (tensorName: string) => void): void;
+  retrieveSpriteAndMetadata(run: string, tensorName: string,
+      callback: (r: SpriteAndMetadataInfo) => void): void;
 
   getBookmarks(run: string, tensorName: string, callback: (r: State[]) => void):
       void;
+}
+
+export function retrieveTensorAsBytes(
+    dp: DataProvider, embedding: EmbeddingInfo, run: string, tensorName: string,
+    tensorsPath: string, callback: (ds: DataSet) => void) {
+  // Get the tensor.
+  logging.setModalMessage('Fetching tensor values...', TENSORS_MSG_ID);
+  let xhr = new XMLHttpRequest();
+  xhr.open('GET', tensorsPath);
+  xhr.responseType = 'arraybuffer';
+  xhr.onprogress = (ev) => {
+    if (ev.lengthComputable) {
+      let percent = (ev.loaded * 100 / ev.total).toFixed(1);
+      logging.setModalMessage(
+          'Fetching tensor values: ' + percent + '%', TENSORS_MSG_ID);
+    }
+  };
+  xhr.onload = () => {
+    if (xhr.status !== 200) {
+      let msg = String.fromCharCode.apply(null, new Uint8Array(xhr.response));
+      logging.setErrorMessage(msg, 'fetching tensors');
+      return;
+    }
+    let data: Float32Array;
+    try {
+      data = new Float32Array(xhr.response);
+    } catch (e) {
+      logging.setErrorMessage(e, 'parsing tensor bytes');
+      return;
+    }
+
+    let dim = embedding.tensorShape[1];
+    let N = data.length / dim;
+    if (embedding.tensorShape[0] > N) {
+      logging.setWarningMessage(
+          `Showing the first ${N.toLocaleString()}` +
+          ` of ${embedding.tensorShape[0].toLocaleString()} data points`);
+    }
+    parseTensorsFromFloat32Array(data, dim).then(dataPoints => {
+      callback(new DataSet(dataPoints));
+    });
+  };
+  xhr.send();
 }
 
 export function parseRawTensors(
@@ -96,7 +138,7 @@ export function parseRawTensors(
 }
 
 export function parseRawMetadata(
-    contents: string, callback: (r: MetadataInfo) => void) {
+    contents: string, callback: (r: SpriteAndMetadataInfo) => void) {
   parseMetadata(contents).then(result => callback(result));
 }
 
@@ -118,14 +160,13 @@ export function parseTensors(
         vector: null,
         index: data.length,
         projections: null,
-        projectedPoint: null
       };
       // If the first label is not a number, take it as the label.
       if (isNaN(row[0] as any) || numDim === row.length - 1) {
         dataPoint.metadata['label'] = row[0];
-        dataPoint.vector = row.slice(1).map(Number);
+        dataPoint.vector = new Float32Array(row.slice(1).map(Number));
       } else {
-        dataPoint.vector = row.map(Number);
+        dataPoint.vector = new Float32Array(row.map(Number));
       }
       data.push(dataPoint);
       if (numDim == null) {
@@ -143,6 +184,29 @@ export function parseTensors(
       }
     });
     return data;
+  }, TENSORS_MSG_ID).then(dataPoints => {
+    logging.setModalMessage(null, TENSORS_MSG_ID);
+    return dataPoints;
+  });
+}
+
+/** Parses a tsv text file. */
+export function parseTensorsFromFloat32Array(data: Float32Array,
+    dim: number): Promise<DataPoint[]> {
+  return runAsyncTask('Parsing tensors...', () => {
+    let N = data.length / dim;
+    let dataPoints: DataPoint[] = [];
+    let offset = 0;
+    for (let i = 0; i < N; ++i) {
+      dataPoints.push({
+        metadata: {},
+        vector: data.subarray(offset, offset + dim),
+        index: i,
+        projections: null,
+      });
+      offset += dim;
+    }
+    return dataPoints;
   }, TENSORS_MSG_ID).then(dataPoints => {
     logging.setModalMessage(null, TENSORS_MSG_ID);
     return dataPoints;
@@ -192,17 +256,14 @@ export function analyzeMetadata(
     });
   });
   columnStats.forEach((stats, colIndex) => {
-    let map = mapOfValues[colIndex];
-    if (!stats.tooManyUniqueValues) {
-      stats.uniqueEntries = map.entries().map(e => {
-        return {label: e.key, count: e.value};
-      });
-    }
+    stats.uniqueEntries = mapOfValues[colIndex].entries().map(e => {
+      return {label: e.key, count: e.value};
+    });
   });
   return columnStats;
 }
 
-export function parseMetadata(content: string): Promise<MetadataInfo> {
+export function parseMetadata(content: string): Promise<SpriteAndMetadataInfo> {
   return runAsyncTask('Parsing metadata...', () => {
     let lines = content.split('\n').filter(line => line.trim().length > 0);
     let hasHeader = lines[0].indexOf('\t') >= 0;
@@ -228,7 +289,7 @@ export function parseMetadata(content: string): Promise<MetadataInfo> {
     return {
       stats: analyzeMetadata(columnNames, pointsMetadata),
       pointsInfo: pointsMetadata
-    } as MetadataInfo;
+    } as SpriteAndMetadataInfo;
   }, METADATA_MSG_ID).then(metadata => {
     logging.setModalMessage(null, METADATA_MSG_ID);
     return metadata;
@@ -240,20 +301,21 @@ export function fetchImage(url: string): Promise<HTMLImageElement> {
     let image = new Image();
     image.onload = () => resolve(image);
     image.onerror = (err) => reject(err);
+    image.crossOrigin = '';
     image.src = url;
   });
 }
 
-export function retrieveMetadataInfo(metadataPath: string,
+export function retrieveSpriteAndMetadataInfo(metadataPath: string,
     spriteImagePath: string, spriteMetadata: SpriteMetadata,
-    callback: (r: MetadataInfo) => void) {
-  let metadataPromise: Promise<MetadataInfo> = null;
+    callback: (r: SpriteAndMetadataInfo) => void) {
+  let metadataPromise: Promise<SpriteAndMetadataInfo> = Promise.resolve({});
   if (metadataPath) {
-    metadataPromise = new Promise<MetadataInfo>((resolve, reject) => {
+    metadataPromise = new Promise<SpriteAndMetadataInfo>((resolve, reject) => {
       logging.setModalMessage('Fetching metadata...', METADATA_MSG_ID);
       d3.text(metadataPath, (err: any, rawMetadata: string) => {
         if (err) {
-          logging.setModalMessage('Error: ' + err.responseText);
+          logging.setErrorMessage(err.responseText, 'fetching metadata');
           reject(err);
           return;
         }
@@ -274,8 +336,17 @@ export function retrieveMetadataInfo(metadataPath: string,
       logging.setModalMessage(null, spriteMsgId);
     }
     let [metadata, spriteImage] = values;
-    metadata.spriteImage = spriteImage;
-    metadata.spriteMetadata = spriteMetadata;
-    callback(metadata);
+
+    if (spriteImage && (spriteImage.height > MAX_SPRITE_IMAGE_SIZE_PX ||
+                        spriteImage.width > MAX_SPRITE_IMAGE_SIZE_PX)) {
+      logging.setModalMessage(
+          `Error: Sprite image of dimensions ${spriteImage.width}px x ` +
+          `${spriteImage.height}px exceeds maximum dimensions ` +
+          `${MAX_SPRITE_IMAGE_SIZE_PX}px x ${MAX_SPRITE_IMAGE_SIZE_PX}px`);
+    } else {
+      metadata.spriteImage = spriteImage;
+      metadata.spriteMetadata = spriteMetadata;
+      callback(metadata);
+    }
   });
 }

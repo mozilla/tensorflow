@@ -204,6 +204,7 @@ ifeq ($(TARGET),PI)
 endif
 
 # Set up Android building
+# LINT.IfChange
 ifeq ($(TARGET),ANDROID)
 # Override NDK_ROOT on the command line with your own NDK location, e.g.
 # make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID \
@@ -276,6 +277,7 @@ ifeq ($(TARGET),ANDROID)
 	endif
 
 endif  # ANDROID
+# LINT.ThenChange(//tensorflow/contrib/android/cmake/CMakeLists.txt)
 
 # Settings for iOS.
 ifeq ($(TARGET),IOS)
@@ -416,7 +418,6 @@ BENCHMARK_NAME := $(BINDIR)benchmark
 CORE_CC_ALL_SRCS := \
 $(wildcard tensorflow/core/*.cc) \
 $(wildcard tensorflow/core/common_runtime/*.cc) \
-$(wildcard tensorflow/core/debug/*.cc) \
 $(wildcard tensorflow/core/framework/*.cc) \
 $(wildcard tensorflow/core/graph/*.cc) \
 $(wildcard tensorflow/core/lib/*/*.cc) \
@@ -437,6 +438,7 @@ $(wildcard tensorflow/core/*/*/*test.cc) \
 $(wildcard tensorflow/core/*/*/*testutil*) \
 $(wildcard tensorflow/core/*/*/*testlib*) \
 $(wildcard tensorflow/core/*/*/*main.cc) \
+$(wildcard tensorflow/core/debug/*.cc) \
 $(wildcard tensorflow/core/graph/dot.*) \
 $(wildcard tensorflow/core/lib/gif/*) \
 $(wildcard tensorflow/core/lib/io/zlib*) \

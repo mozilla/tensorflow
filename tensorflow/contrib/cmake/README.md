@@ -13,15 +13,39 @@ Linux.
 Current Status
 --------------
 
+CMake can be used to build TensorFlow on Windows. See the [getting started documentation](https://www.tensorflow.org/get_started/os_setup.html#pip-installation-on-windows)
+for instructions on how to install a pre-built TensorFlow package on Windows.
+
+### Current known limitations
+* It is not possible to load a custom Op library.
+* GCS and HDFS file systems are not supported.
+* The following Ops are not currently implemented:
+ - Dequantize
+ - QuantizeAndDequantize
+ - QuantizedAvgPool
+ - QuantizedBatchNomWithGlobalNormalization
+ - QuantizedBiasAdd 
+ - QuantizedConcat
+ - QuantizedConv2D
+ - QuantizedMatmul
+ - QuantizedMaxPoo
+ - QuantizeDownAndShrinkRange
+ - QuantizedRelu
+ - QuantizedRelu6
+ - QuantizedReshape
+ - QuantizeV2
+ - RequantizationRange
+ - Requantize
+
+## Building with CMake
+
 The CMake files in this directory can build the core TensorFlow runtime, an
 example C++ binary, and a PIP package containing the runtime and Python
 bindings.
 
-Note: Windows support is in an **alpha** state, and we welcome your feedback.
-
 ### Pre-requisites
 
-* CMake version 3.1 up to 3.6
+* CMake version 3.5 up to 3.6
 
 * [Git](http://git-scm.com)
 
@@ -46,6 +70,8 @@ Note: Windows support is in an **alpha** state, and we welcome your feedback.
   - [swigwin-3.0.10](http://www.swig.org/download.html)
   - [NVidia CUDA Toolkit 8.0] (https://developer.nvidia.com/cuda-downloads)
   - [NVidia CUDNN 5.1] (https://developer.nvidia.com/cudnn)
+  - [CMake 3.6](https://cmake.org/files/v3.6/cmake-3.6.3-win64-x64.msi)
+  
 * Ubuntu 14.04
   - Makefile generator
   - Docker 1.9.1 (for automated testing)
@@ -60,7 +86,9 @@ Note: Windows support is in an **alpha** state, and we welcome your feedback.
     on Windows, but have not yet committed to supporting that configuration.)
 
   - The following Python APIs are not currently implemented:
-    * Loading custom op libraries via `tf.load_op_library()`.
+    * Loading custom op libraries via `tf.load_op_library()`. In order to use your
+      custom op, please put the source code under the tensorflow/core/user_ops 
+      directory, and a shape function is required (not optional) for each op.
     * Path manipulation functions (such as `tf.gfile.ListDirectory()`) are not
       functional.
 
@@ -76,7 +104,6 @@ Note: Windows support is in an **alpha** state, and we welcome your feedback.
     * `ImmutableConst`
     * `Lgamma`
     * `Polygamma`
-    * `SparseMatmul`
     * `Zeta`
 
   - Google Cloud Storage support is not currently implemented. The GCS library
@@ -195,7 +222,21 @@ Step-by-step Windows build
    * `-Dtensorflow_ENABLE_GPU=(ON|OFF)`. Defaults to `OFF`. Include
      GPU support. If GPU is enabled you need to install the CUDA 8.0 Toolkit and CUDNN 5.1.
      CMake will expect the location of CUDNN in -DCUDNN_HOME=path_you_unziped_cudnn.
-    
+ 
+   * `-Dtensorflow_BUILD_CC_TESTS=(ON|OFF)`. Defaults to `OFF`. This builds cc unit tests.
+     There are many of them and building will take a few hours.
+     After cmake, build and execute the tests with
+     ```
+     MSBuild /p:Configuration=RelWithDebInfo ALL_BUILD.vcxproj
+     ctest -C RelWithDebInfo
+     ```
+ 
+   * `-Dtensorflow_BUILD_PYTHON_TESTS=(ON|OFF)`. Defaults to `OFF`. This enables python kernel tests.
+     After building the python wheel, you need to install the new wheel before running the tests.
+     To execute the tests, use
+     ```
+     ctest -C RelWithDebInfo
+     ```
 
 4. Invoke MSBuild to build TensorFlow.
 
