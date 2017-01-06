@@ -15,7 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/function.h"
 
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 #include "tensorflow/core/framework/function.pb_text.h"
@@ -169,7 +169,7 @@ typedef std::unordered_map<string, NameInfoItem> NameInfoIndex;
 Status AddArgName(NameInfoIndex* name_info, const string& arg,
                   const NameInfoItem& item) {
   if (!name_info->insert({arg, item}).second) {
-    return errors::InvalidArgument("Duplicated arg name.");
+    return errors::InvalidArgument("Duplicated arg name: ", arg);
   }
   return Status::OK();
 }
@@ -206,7 +206,7 @@ Status BuildInputArgIndex(const OpDef::ArgDef& arg_def,
 Status AddRetName(NameInfoIndex* name_info, const string& ret,
                   const NameInfoItem& item) {
   if (!name_info->insert({ret, item}).second) {
-    return errors::InvalidArgument("Duplicated ret name.");
+    return errors::InvalidArgument("Duplicated ret name: ", ret);
   }
   return Status::OK();
 }
@@ -423,12 +423,21 @@ Status InstantiateNode(const NodeDef& fnode,
       return errors::InvalidArgument("Expected input[", i, "] == '", input,
                                      "' to be a control input.");
     }
-    const NameInfoItem* item = gtl::FindOrNull(name_info, input.substr(1));
-    if (item == nullptr) {
+    int nid = -1;
+    const string node_name = input.substr(1);
+    const string node_colon = node_name + ":";
+    for (const auto& p : name_info) {
+      if (p.first == node_name ||
+          tensorflow::StringPiece(p.first).starts_with(node_colon)) {
+        nid = p.second.nid;
+        break;
+      }
+    }
+    if (nid == -1) {
       return errors::InvalidArgument("input[", i, "] == '", input,
                                      "', is not found.");
     }
-    gnode->add_input(Dep(item->nid));
+    gnode->add_input(Dep(nid));
   }
 
   // Attrs.
@@ -641,7 +650,7 @@ string Print(const FunctionDef& fdef) {
     strings::StrAppend(&out, Print(sig.output_arg(i)));
   }
   strings::StrAppend(&out, ") {\n");
-  if (fdef.node_def_size() > 0) {
+  if (fdef.node_def_size() > 0 || fdef.ret_size() > 0) {
     for (const auto& n : fdef.node_def()) {
       strings::StrAppend(&out, "  ", Print(n), "\n");
     }
@@ -732,6 +741,8 @@ Status InstantiateFunction(const FunctionDef& fdef,
                            const InstantiateAttrValueMap& attr_values,
                            GetFunctionSignature get_function,
                            InstantiationResult* result) {
+  VLOG(3) << "Instantiation Function: " << Print(fdef);
+
   const OpDef& sig = fdef.signature();
   GraphDef* gdef = &result->gdef;
   gdef->Clear();
@@ -761,7 +772,7 @@ Status InstantiateFunction(const FunctionDef& fdef,
   // Makes a copy of all attrs in fdef and substitutes placeholders.
   // After this step, every attr is bound to a concrete value.
   std::vector<InstantiateAttrValueMap> node_attrs;
-  if (fdef.node_def_size() > 0) {
+  if (fdef.node_def_size() > 0 || fdef.ret_size() > 0) {
     node_attrs.resize(fdef.node_def_size());
     for (int i = 0; i < fdef.node_def_size(); ++i) {
       for (auto attr : fdef.node_def(i).attr()) {
@@ -1012,6 +1023,32 @@ Status FunctionLibraryDefinition::LookUp(
   return default_registry_->LookUp(op, op_reg_data);
 }
 
+const FunctionDef* FunctionLibraryDefinition::GetAttrImpl(
+    const NodeDef& ndef) const {
+  if (ndef.op() != kGradientOp) {
+    // If 'ndef' calls a function and the function's def has the attr,
+    // returns it.
+    return Find(ndef.op());
+  }
+
+  // If ndef is SymbolicGradient[f=Foo], we use Foo's gradient or
+  // Foo's attributes.
+  const NameAttrList* forward_func_attrs;
+  if (!GetNodeAttr(AttrSlice(&ndef.attr()), kFuncAttr, &forward_func_attrs)
+           .ok()) {
+    return nullptr;
+  }
+  const string& func_name = forward_func_attrs->name();
+  const string& grad_name = FindGradient(func_name);
+  // If 'func' has a user-defined gradient function, uses the grad
+  // function's attrs to see if noinline is specified. Otherwise,
+  // uses func's attrs.
+  if (!grad_name.empty()) {
+    return Find(grad_name);
+  }
+  return Find(func_name);
+}
+
 FunctionDefLibrary FunctionLibraryDefinition::ToProto() const {
   FunctionDefLibrary lib;
   for (const auto& f : function_defs_) {
@@ -1073,35 +1110,17 @@ FunctionDefHelper::AttrValueWrapper FunctionDefHelper::FunctionRef(
   return ret;
 }
 
-FunctionDef::Node FunctionDefHelper::Node::ToProto() const {
-  FunctionDef::Node n;
-  for (const string& r : this->ret) {
-    n.add_ret(r);
-  }
-  n.set_op(this->op);
-  for (const string& a : arg) {
-    n.add_arg(a);
-  }
-  for (const auto& a : this->attr) {
-    n.mutable_attr()->insert({a.first, a.second.proto});
-  }
-  for (const string& d : dep) {
-    n.add_dep(d);
-  }
-  return n;
-}
-
 NodeDef FunctionDefHelper::Node::ToNodeDef() const {
   NodeDef n;
   n.set_op(this->op);
   n.set_name(this->ret[0]);
-  for (const string& a : arg) {
-    n.add_input(a);
-  }
   for (const auto& a : this->attr) {
     n.mutable_attr()->insert({a.first, a.second.proto});
   }
-  for (const string& d : dep) {
+  for (const string& a : this->arg) {
+    n.add_input(a);
+  }
+  for (const string& d : this->dep) {
     n.add_input(strings::StrCat("^", d));
   }
   return n;
@@ -1152,8 +1171,56 @@ FunctionDef FunctionDefHelper::Define(const string& name,
   OpRegistrationData op_reg_data;
   TF_CHECK_OK(b.Finalize(&op_reg_data));
   fdef.mutable_signature()->Swap(&op_reg_data.op_def);
-  for (const auto& n : node_def) {
-    *(fdef.add_node()) = n.ToProto();
+
+  // Mapping from legacy output names to NodeDef outputs.
+  std::unordered_map<string, string> ret_index;
+  for (const auto& a : fdef.signature().input_arg()) {
+    ret_index[a.name()] = a.name();
+  }
+
+  // For looking up OpDefs
+  auto* op_def_registry = OpRegistry::Global();
+
+  // Function body
+  for (const auto& src : node_def) {
+    NodeDef* n = fdef.add_node_def();
+    n->set_op(src.op);
+    n->set_name(src.ret[0]);
+    for (const auto& a : src.attr) {
+      n->mutable_attr()->insert({a.first, a.second.proto});
+    }
+    for (const string& a : src.arg) {
+      const auto iter = ret_index.find(a);
+      CHECK(iter != ret_index.end()) << "Node input '" << a << "' in '"
+                                     << src.ret[0] << "' of " << name;
+      n->add_input(iter->second);
+    }
+    for (const string& d : src.dep) {
+      n->add_input(strings::StrCat("^", d));
+    }
+
+    // Add the outputs of this node to ret_index.
+    const OpDef* op_def = nullptr;
+    TF_CHECK_OK(op_def_registry->LookUpOpDef(n->op(), &op_def)) << n->op();
+    CHECK(op_def != nullptr) << n->op();
+    NameRangeMap output_names;
+    TF_CHECK_OK(NameRangesForNode(*n, *op_def, nullptr, &output_names));
+    for (const auto& o : output_names) {
+      CHECK_LE(o.second.second, src.ret.size())
+          << "Missing ret for output '" << o.first << "' in '" << src.ret[0]
+          << "' of " << name;
+      for (int i = o.second.first; i < o.second.second; ++i) {
+        ret_index[src.ret[i]] =
+            strings::StrCat(src.ret[0], ":", o.first, ":", i - o.second.first);
+      }
+    }
+  }
+
+  // Returns
+  for (const auto& r : fdef.signature().output_arg()) {
+    const auto iter = ret_index.find(r.name());
+    CHECK(iter != ret_index.end()) << "Return '" << r.name() << "' in " << name;
+    fdef.mutable_ret()->insert({r.name(), iter->second});
   }
   return fdef;
 }

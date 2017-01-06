@@ -53,7 +53,7 @@ for a specific class:
 
   # Ensures that the loss for examples whose ground truth class is `3` is 5x
   # higher than the loss for all other examples.
-  weight = tf.mul(4, tf.cast(tf.equal(labels, 3), tf.float32)) + 1
+  weight = tf.multiply(4, tf.cast(tf.equal(labels, 3), tf.float32)) + 1
 
   onehot_labels = tf.one_hot(labels, num_classes=5)
   tf.contrib.losses.softmax_cross_entropy(logits, onehot_labels, weight=weight)
@@ -133,5 +133,6 @@ from __future__ import print_function
 # pylint: disable=unused-import,wildcard-import
 from tensorflow.contrib.losses.python.losses.loss_ops import *
 from tensorflow.python.util.all_util import make_all
+# pylint: enable=unused-import,wildcard-import
 
 __all__ = make_all(__name__)

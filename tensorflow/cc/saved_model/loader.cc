@@ -31,24 +31,26 @@ namespace tensorflow {
 namespace {
 
 auto* load_attempt_count = monitoring::Counter<2>::New(
-    "/tensorflow/cc/saved_model/load_attempt_count", "model_path", "status",
-    "The number of times a SavedModel was successfully loaded.");
+    "/tensorflow/cc/saved_model/load_attempt_count",
+    "The number of times a SavedModel was successfully loaded.", "model_path",
+    "status");
 auto* load_latency = monitoring::Counter<1>::New(
-    "/tensorflow/cc/saved_model/load_latency", "model_path",
-    "Latency in microseconds for SavedModels that were succesfully loaded.");
+    "/tensorflow/cc/saved_model/load_latency",
+    "Latency in microseconds for SavedModels that were succesfully loaded.",
+    "model_path");
 constexpr char kLoadAttemptFail[] = "fail";
 constexpr char kLoadAttemptSuccess[] = "success";
 
 Status ReadSavedModel(const string& export_dir, SavedModel* saved_model_proto) {
   const string saved_model_pb_path =
       io::JoinPath(export_dir, kSavedModelFilenamePb);
-  if (Env::Default()->FileExists(saved_model_pb_path)) {
+  if (Env::Default()->FileExists(saved_model_pb_path).ok()) {
     return ReadBinaryProto(Env::Default(), saved_model_pb_path,
                            saved_model_proto);
   }
   const string saved_model_pbtxt_path =
       io::JoinPath(export_dir, kSavedModelFilenamePbTxt);
-  if (Env::Default()->FileExists(saved_model_pbtxt_path)) {
+  if (Env::Default()->FileExists(saved_model_pbtxt_path).ok()) {
     return ReadTextProto(Env::Default(), saved_model_pbtxt_path,
                          saved_model_proto);
   }
@@ -118,7 +120,7 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
   // variables are stored in the variables.data-?????-of-????? files.
   const string variables_index_path = io::JoinPath(
       variables_directory, MetaFilename(kSavedModelVariablesFilename));
-  if (!Env::Default()->FileExists(variables_index_path)) {
+  if (!Env::Default()->FileExists(variables_index_path).ok()) {
     return errors::NotFound(
         "Checkpoint index file not found in SavedModel directory.");
   }
@@ -251,8 +253,8 @@ bool MaybeSavedModelDirectory(const string& export_dir) {
       io::JoinPath(export_dir, kSavedModelFilenamePb);
   const string saved_model_pbtxt_path =
       io::JoinPath(export_dir, kSavedModelFilenamePbTxt);
-  return Env::Default()->FileExists(saved_model_pb_path) ||
-         Env::Default()->FileExists(saved_model_pbtxt_path);
+  return Env::Default()->FileExists(saved_model_pb_path).ok() ||
+         Env::Default()->FileExists(saved_model_pbtxt_path).ok();
 }
 
 }  // namespace tensorflow

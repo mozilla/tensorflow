@@ -252,7 +252,7 @@ class Beta(distribution.Distribution):
     mode = (self.a - 1.)/ (self.a_b_sum - 2.)
     if self.allow_nan_stats:
       nan = np.array(np.nan, dtype=self.dtype.as_numpy_dtype())
-      return math_ops.select(
+      return array_ops.where(
           math_ops.logical_and(
               math_ops.greater(self.a, 1.),
               math_ops.greater(self.b, 1.)),
@@ -302,6 +302,7 @@ class BetaWithSoftplusAB(Beta):
     self._parameters = parameters
 
 
+@kullback_leibler.RegisterKL(Beta, Beta)
 def _kl_beta_beta(d1, d2, name=None):
   """Calculate the batched KL divergence KL(d1 || d2) with d1 and d2 Beta.
 
@@ -325,14 +326,3 @@ def _kl_beta_beta(d1, d2, name=None):
               + (d1.b - d2.b)*math_ops.digamma(d1.b)
               + (d2.a_b_sum - d1.a_b_sum)*math_ops.digamma(d1.a_b_sum))
     return log_betas + digammas
-
-
-# Register KL divergences.
-kl_classes = [
-    Beta,
-    BetaWithSoftplusAB,
-]
-
-for beta_aa in kl_classes:
-  for beta_bb in kl_classes:
-    kullback_leibler.RegisterKL(beta_aa, beta_bb)(_kl_beta_beta)

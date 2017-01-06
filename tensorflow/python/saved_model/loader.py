@@ -57,16 +57,18 @@ with tf.Session(graph=tf.Graph()) as sess:
 
 ```
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import os
-import tensorflow as tf
 
 from google.protobuf import text_format
+
 from tensorflow.core.protobuf import meta_graph_pb2
 from tensorflow.core.protobuf import saved_model_pb2
+from tensorflow.python.framework import ops
 from tensorflow.python.lib.io import file_io
 from tensorflow.python.saved_model import constants
 from tensorflow.python.training import saver as tf_saver
@@ -149,6 +151,29 @@ def _get_asset_tensors(export_dir, meta_graph_def_to_load):
   return asset_tensor_dict
 
 
+def _get_main_op_tensor(meta_graph_def_to_load):
+  """Gets the main op tensor, if one exists.
+
+  Args:
+    meta_graph_def_to_load: The meta graph def from the SavedModel to be loaded.
+
+  Returns:
+    The main op tensor, if it exists and `None` otherwise.
+
+  Raises:
+    RuntimeError: If the collection def corresponding to the main op key has
+        other than exactly one tensor.
+  """
+  collection_def = meta_graph_def_to_load.collection_def
+  main_op_tensor = None
+  if constants.MAIN_OP_KEY in collection_def:
+    main_ops = collection_def[constants.MAIN_OP_KEY].node_list.value
+    if len(main_ops) != 1:
+      raise RuntimeError("Expected exactly one SavedModel main op.")
+    main_op_tensor = ops.get_collection(constants.MAIN_OP_KEY)[0]
+  return main_op_tensor
+
+
 def _get_legacy_init_op_tensor(meta_graph_def_to_load):
   """Gets the legacy init op tensor, if one exists.
 
@@ -169,8 +194,28 @@ def _get_legacy_init_op_tensor(meta_graph_def_to_load):
         constants.LEGACY_INIT_OP_KEY].node_list.value
     if len(legacy_init_ops) != 1:
       raise RuntimeError("Expected exactly one legacy serving init op.")
-    legacy_init_op_tensor = tf.get_collection(constants.LEGACY_INIT_OP_KEY)[0]
+    legacy_init_op_tensor = ops.get_collection(constants.LEGACY_INIT_OP_KEY)[0]
   return legacy_init_op_tensor
+
+
+def maybe_saved_model_directory(export_dir):
+  """Checks whether the provided export directory could contain a SavedModel.
+
+  Note that the method does not load any data by itself. If the method returns
+  `false`, the export directory definitely does not contain a SavedModel. If the
+  method returns `true`, the export directory may contain a SavedModel but
+  provides no guarantee that it can be loaded.
+
+  Args:
+    export_dir: Absolute string path to possible export location. For example,
+                '/my/foo/model'.
+
+  Returns:
+    True if the export directory contains SavedModel files, False otherwise.
+  """
+  txt_path = os.path.join(export_dir, constants.SAVED_MODEL_FILENAME_PBTXT)
+  pb_path = os.path.join(export_dir, constants.SAVED_MODEL_FILENAME_PB)
+  return (file_io.file_exists(txt_path) or file_io.file_exists(pb_path))
 
 
 def load(sess, tags, export_dir):
@@ -220,12 +265,13 @@ def load(sess, tags, export_dir):
   asset_tensors_dictionary = _get_asset_tensors(export_dir,
                                                 meta_graph_def_to_load)
 
-  # TODO(sukritiramesh): Add support for a single main op to run upon load,
-  # which will supersede the legacy_init_op.
-  legacy_init_op_tensor = _get_legacy_init_op_tensor(meta_graph_def_to_load)
-
-  if legacy_init_op_tensor is not None:
-    sess.run(fetches=[legacy_init_op_tensor],
-             feed_dict=asset_tensors_dictionary)
+  main_op_tensor = _get_main_op_tensor(meta_graph_def_to_load)
+  if main_op_tensor is not None:
+    sess.run(fetches=[main_op_tensor], feed_dict=asset_tensors_dictionary)
+  else:
+    legacy_init_op_tensor = _get_legacy_init_op_tensor(meta_graph_def_to_load)
+    if legacy_init_op_tensor is not None:
+      sess.run(fetches=[legacy_init_op_tensor],
+               feed_dict=asset_tensors_dictionary)
 
   return meta_graph_def_to_load

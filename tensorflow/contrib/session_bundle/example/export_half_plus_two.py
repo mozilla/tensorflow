@@ -57,7 +57,7 @@ def Export():
     x = tf.identity(tf_example["x"], name="x")
 
     # Calculate, y = a*x + b
-    y = tf.add(tf.mul(a, x), b, name="y")
+    y = tf.add(tf.multiply(a, x), b, name="y")
 
     # Setup a standard Saver for our variables.
     save = tf.train.Saver(
@@ -125,7 +125,7 @@ def Export():
         print("copying asset file: %s" % filepath)
 
     # Run an export.
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer().run()
     export = exporter.Exporter(save)
     export.init(
         sess.graph.as_graph_def(),

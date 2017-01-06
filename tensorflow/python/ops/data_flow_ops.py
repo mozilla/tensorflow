@@ -25,7 +25,6 @@ import re
 
 import six
 
-from tensorflow.python.framework import common_shapes
 from tensorflow.python.framework import dtypes as _dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
@@ -206,8 +205,8 @@ class QueueBase(object):
     reduced_shapes = [
         six.moves.reduce(_shape_common, s) for s in zip(*queue_shapes)]
 
-    queue_refs = [x.queue_ref for x in queues]
-    selected_queue = control_flow_ops.ref_select(index, queue_refs)
+    queue_refs = array_ops.stack([x.queue_ref for x in queues])
+    selected_queue = array_ops.gather(queue_refs, index)
     return QueueBase(dtypes=dtypes, shapes=reduced_shapes, names=names,
                      queue_ref=selected_queue)
 
@@ -327,7 +326,12 @@ class QueueBase(object):
       for val, shape in zip(vals, self._shapes):
         val.get_shape().assert_is_compatible_with(shape)
 
-      return gen_data_flow_ops._queue_enqueue(self._queue_ref, vals, name=scope)
+      if self._queue_ref.dtype == _dtypes.resource:
+        return gen_data_flow_ops._queue_enqueue_v2(
+            self._queue_ref, vals, name=scope)
+      else:
+        return gen_data_flow_ops._queue_enqueue(
+            self._queue_ref, vals, name=scope)
 
   def enqueue_many(self, vals, name=None):
     """Enqueues zero or more elements to this queue.
@@ -368,7 +372,7 @@ class QueueBase(object):
             val.get_shape().with_rank_at_least(1)[0])
         val.get_shape()[1:].assert_is_compatible_with(shape)
 
-      return gen_data_flow_ops._queue_enqueue_many(
+      return gen_data_flow_ops._queue_enqueue_many_v2(
           self._queue_ref, vals, name=scope)
 
   def _dequeue_return_value(self, tensors):
@@ -416,8 +420,12 @@ class QueueBase(object):
     """
     if name is None:
       name = "%s_Dequeue" % self._name
-    ret = gen_data_flow_ops._queue_dequeue(
-        self._queue_ref, self._dtypes, name=name)
+    if self._queue_ref.dtype == _dtypes.resource:
+      ret = gen_data_flow_ops._queue_dequeue_v2(
+          self._queue_ref, self._dtypes, name=name)
+    else:
+      ret = gen_data_flow_ops._queue_dequeue(
+          self._queue_ref, self._dtypes, name=name)
 
     # NOTE(mrry): Not using a shape function because we need access to
     # the `QueueBase` object.
@@ -455,7 +463,7 @@ class QueueBase(object):
     if name is None:
       name = "%s_DequeueMany" % self._name
 
-    ret = gen_data_flow_ops._queue_dequeue_many(
+    ret = gen_data_flow_ops._queue_dequeue_many_v2(
         self._queue_ref, n=n, component_types=self._dtypes, name=name)
 
     # NOTE(mrry): Not using a shape function because we need access to
@@ -496,7 +504,7 @@ class QueueBase(object):
     if name is None:
       name = "%s_DequeueUpTo" % self._name
 
-    ret = gen_data_flow_ops._queue_dequeue_up_to(
+    ret = gen_data_flow_ops._queue_dequeue_up_to_v2(
         self._queue_ref, n=n, component_types=self._dtypes, name=name)
 
     # NOTE(mrry): Not using a shape function because we need access to
@@ -530,9 +538,14 @@ class QueueBase(object):
     """
     if name is None:
       name = "%s_Close" % self._name
-    return gen_data_flow_ops._queue_close(
-        self._queue_ref, cancel_pending_enqueues=cancel_pending_enqueues,
-        name=name)
+    if self._queue_ref.dtype == _dtypes.resource:
+      return gen_data_flow_ops._queue_close_v2(
+          self._queue_ref, cancel_pending_enqueues=cancel_pending_enqueues,
+          name=name)
+    else:
+      return gen_data_flow_ops._queue_close(
+          self._queue_ref, cancel_pending_enqueues=cancel_pending_enqueues,
+          name=name)
 
   def size(self, name=None):
     """Compute the number of elements in this queue.
@@ -545,7 +558,10 @@ class QueueBase(object):
     """
     if name is None:
       name = "%s_Size" % self._name
-    return gen_data_flow_ops._queue_size(self._queue_ref, name=name)
+    if self._queue_ref.dtype == _dtypes.resource:
+      return gen_data_flow_ops._queue_size_v2(self._queue_ref, name=name)
+    else:
+      return gen_data_flow_ops._queue_size(self._queue_ref, name=name)
 
 
 class RandomShuffleQueue(QueueBase):
@@ -615,7 +631,7 @@ class RandomShuffleQueue(QueueBase):
       # the id of the last op created.)
       string = (str(seed1) + shared_name).encode("utf-8")
       seed2 = int(hashlib.md5(string).hexdigest()[:8], 16) & 0x7FFFFFFF
-    queue_ref = gen_data_flow_ops._random_shuffle_queue(
+    queue_ref = gen_data_flow_ops._random_shuffle_queue_v2(
         component_types=dtypes, shapes=shapes, capacity=capacity,
         min_after_dequeue=min_after_dequeue, seed=seed1, seed2=seed2,
         shared_name=shared_name, name=name)
@@ -666,7 +682,7 @@ class FIFOQueue(QueueBase):
     dtypes = _as_type_list(dtypes)
     shapes = _as_shape_list(shapes, dtypes)
     names = _as_name_list(names, dtypes)
-    queue_ref = gen_data_flow_ops._fifo_queue(
+    queue_ref = gen_data_flow_ops._fifo_queue_v2(
         component_types=dtypes, shapes=shapes, capacity=capacity,
         shared_name=shared_name, name=name)
 
@@ -733,7 +749,7 @@ class PaddingFIFOQueue(QueueBase):
                        "but received %d dtypes and %d shapes."
                        % (len(dtypes), len(shapes)))
 
-    queue_ref = gen_data_flow_ops._padding_fifo_queue(
+    queue_ref = gen_data_flow_ops._padding_fifo_queue_v2(
         component_types=dtypes, shapes=shapes, capacity=capacity,
         shared_name=shared_name, name=name)
 
@@ -789,7 +805,7 @@ class PriorityQueue(QueueBase):
     types = _as_type_list(types)
     shapes = _as_shape_list(shapes, types)
 
-    queue_ref = gen_data_flow_ops._priority_queue(
+    queue_ref = gen_data_flow_ops._priority_queue_v2(
         component_types=types, shapes=shapes, capacity=capacity,
         shared_name=shared_name, name=name)
 
@@ -1061,93 +1077,6 @@ ops.NotDifferentiable("InitializeTableFromTextFile")
 ops.NotDifferentiable("MutableDenseHashTable")
 ops.NotDifferentiable("MutableHashTable")
 ops.NotDifferentiable("MutableHashTableOfTensors")
-
-
-ops.RegisterShape("QueueSize")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("Queue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("FIFOQueue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("PaddingFIFOQueue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("RandomShuffleQueue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("PriorityQueue")(common_shapes.call_cpp_shape_fn)
-
-
-# NOTE(mrry): The following ops use higher-level information in the
-# Queue class to provide shape information.
-ops.RegisterShape("QueueDequeue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("QueueDequeueMany")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("QueueDequeueUpTo")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("QueueEnqueue")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("QueueEnqueueMany")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("QueueClose")(common_shapes.call_cpp_shape_fn)
-
-ops.RegisterShape("Stack")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("StackPush")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("StackPop")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("StackClose")(common_shapes.call_cpp_shape_fn)
-
-# NOTE(mrry): Uses higher-level information in the Barrier class to
-# provide shape information.
-ops.RegisterShape("BarrierReadySize")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("BarrierIncompleteSize")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("Barrier")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("BarrierTakeMany")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("BarrierClose")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("BarrierInsertMany")(common_shapes.call_cpp_shape_fn)
-
-ops.RegisterShape("GetSessionHandle")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("GetSessionTensor")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("DeleteSessionTensor")(common_shapes.call_cpp_shape_fn)
-
-
-@ops.RegisterShape("DynamicPartition")
-def _DynamicPartitionShape(op):
-  """Shape function for data_flow_ops.dynamic_partition."""
-  data_shape = op.inputs[0].get_shape()
-  partitions_shape = op.inputs[1].get_shape()
-  # If we don't know the rank of partitions, we don't know anything
-  mid = partitions_shape.ndims
-  if mid is None:
-    result_shape = tensor_shape.unknown_shape()
-  else:
-    # data_shape must start with partitions_shape
-    partitions_shape.assert_is_compatible_with(data_shape[:mid])
-    # The partition shape is dynamic in the 0th dimension, and matches
-    # data_shape in the remaining dimensions.
-    result_shape = tensor_shape.TensorShape([None]).concatenate(
-        data_shape[mid:])
-  return [result_shape] * op.get_attr("num_partitions")
-
-
-@ops.RegisterShape("DynamicStitch")
-def _DynamicStitchShape(op):
-  """Shape function for data_flow_ops.dynamic_stitch."""
-  num_partitions = op.get_attr("N")
-  indices_shapes = [t.get_shape() for t in op.inputs[0:num_partitions]]
-  data_shapes = [t.get_shape() for t in op.inputs[num_partitions:]]
-  output_shape = tensor_shape.unknown_shape()
-  extra_shape = tensor_shape.TensorShape(None)
-  for indices_shape, data_shape in zip(indices_shapes, data_shapes):
-    indices_ndims = indices_shape.ndims
-    if indices_ndims is not None:
-      # Assert that data_shape starts with indices_shape
-      indices_shape.merge_with(data_shape[:indices_ndims])
-      # The rest belongs to output
-      extra_shape = extra_shape.merge_with(data_shape[indices_ndims:])
-  return [tensor_shape.TensorShape([None]).concatenate(extra_shape)]
-
-
-ops.RegisterShape("LookupTableFind")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("LookupTableInsert")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("LookupTableImport")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("LookupTableSize")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("LookupTableExport")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("HashTable")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("MutableDenseHashTable")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("MutableHashTable")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("MutableHashTableOfTensors")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("InitializeTable")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("InitializeTableFromTextFile")(
-    common_shapes.call_cpp_shape_fn)
 
 
 class ConditionalAccumulatorBase(object):
@@ -1453,16 +1382,3 @@ class SparseConditionalAccumulator(ConditionalAccumulatorBase):
         indices=return_val.indices,
         values=return_val.values,
         dense_shape=return_val.shape)
-
-
-ops.RegisterShape("AccumulatorNumAccumulated")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("AccumulatorSetGlobalStep")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("ConditionalAccumulator")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("AccumulatorApplyGradient")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("AccumulatorTakeGradient")(common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("SparseConditionalAccumulator")(
-    common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("SparseAccumulatorApplyGradient")(
-    common_shapes.call_cpp_shape_fn)
-ops.RegisterShape("SparseAccumulatorTakeGradient")(
-    common_shapes.call_cpp_shape_fn)

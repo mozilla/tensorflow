@@ -20,6 +20,7 @@ from __future__ import print_function
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 
@@ -72,10 +73,11 @@ def dense_to_sparse_tensor(dense_tensor, ignore_value=None):
     # Computes the correct flattened indices for 2d (or higher) tensors.
     if index_dims > 1:
       higher_dims = indices[:, :index_dims - 1]
-      shape_multipliers = array_ops.pack(
-          _multiplier_helper(array_ops.unpack(dense_shape)[1:]))
+      shape_multipliers = array_ops.stack(
+          _multiplier_helper(array_ops.unstack(dense_shape)[1:]))
       offsets = math_ops.reduce_sum(
-          math_ops.mul(higher_dims, shape_multipliers), reduction_indices=[1])
+          math_ops.multiply(higher_dims, shape_multipliers),
+          reduction_indices=[1])
       flat_indices = math_ops.add(flat_indices, offsets)
     values = array_ops.gather(flat_tensor, flat_indices)
-    return ops.SparseTensor(indices, values, dense_shape)
+    return sparse_tensor.SparseTensor(indices, values, dense_shape)

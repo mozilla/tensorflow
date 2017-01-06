@@ -157,7 +157,7 @@ using ConcatV2Op = ConcatBaseOp<Device, T, NAME_IS_AXIS>;
                               .HostMemory("axis"),           \
                           ConcatV2Op<CPUDevice, type>)
 
-TF_CALL_ALL_TYPES(REGISTER_CONCAT);
+TF_CALL_POD_STRING_TYPES(REGISTER_CONCAT);
 REGISTER_CONCAT(quint8);
 REGISTER_CONCAT(qint8);
 REGISTER_CONCAT(quint16);
@@ -267,10 +267,12 @@ class ConcatOffsetOp : public OpKernel {
           out_vec(j) = offset;
           offset += inp_vec(j);
         } else {
-          OP_REQUIRES(
-              ctx, (inp0_vec(j) == inp_vec(j)),
-              errors::InvalidArgument("input[", i, ",", j, "] mismatch: ",
-                                      inp0_vec(j), " vs. ", inp_vec(j)));
+          OP_REQUIRES(ctx, (inp0_vec(j) == inp_vec(j)),
+                      errors::InvalidArgument(
+                          "All dimensions except ", cdim, " must match. Input ",
+                          i, " has shape [", inp.SummarizeValue(10),
+                          "] and doesn't match input 0 with shape [",
+                          inp0.SummarizeValue(10), "]."));
           out_vec(j) = 0;
         }
       }

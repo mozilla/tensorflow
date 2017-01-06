@@ -82,8 +82,8 @@ def run_training():
     saver = tf.train.Saver()
 
     # Create the op for initializing variables.
-    init_op = tf.group(tf.initialize_all_variables(),
-                       tf.initialize_local_variables())
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
     # Create a session for running Ops on the Graph.
     sess = tf.Session()
 
@@ -91,7 +91,7 @@ def run_training():
     sess.run(init_op)
 
     # Instantiate a SummaryWriter to output summaries and the Graph.
-    summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
+    summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
 
     # Start input enqueue threads.
     coord = tf.train.Coordinator()

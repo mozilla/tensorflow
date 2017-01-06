@@ -19,6 +19,7 @@ from __future__ import print_function
 
 from tensorflow.contrib import framework as contrib_framework
 from tensorflow.contrib.framework import deprecated_arg_values
+from tensorflow.contrib.framework.python.framework import experimental
 from tensorflow.contrib.learn.python.learn import evaluable
 from tensorflow.contrib.learn.python.learn import trainable
 
@@ -146,12 +147,67 @@ def get_model_fn(params, graph_builder_class, device_assigner,
 
 
 class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
-  """An estimator that can train and evaluate a random forest."""
+  """An estimator that can train and evaluate a random forest.
+
+  Example:
+
+  ```python
+  params = tf.contrib.tensor_forest.python.tensor_forest.ForestHParams(
+      num_classes=2, num_features=40, num_trees=10, max_nodes=1000)
+
+  # Estimator using the default graph builder.
+  estimator = TensorForestEstimator(params, model_dir=model_dir)
+
+  # Or estimator using TrainingLossForest as the graph builder.
+  estimator = TensorForestEstimator(
+      params, graph_builder_class=tensor_forest.TrainingLossForest,
+      model_dir=model_dir)
+
+  # Input builders
+  def input_fn_train: # returns x, y
+    ...
+  def input_fn_eval: # returns x, y
+    ...
+  estimator.fit(input_fn=input_fn_train)
+  estimator.evaluate(input_fn=input_fn_eval)
+  estimator.predict(x=x)
+  ```
+  """
 
   def __init__(self, params, device_assigner=None, model_dir=None,
                graph_builder_class=tensor_forest.RandomForestGraphs,
                config=None, weights_name=None, keys_name=None,
                feature_engineering_fn=None, early_stopping_rounds=100):
+
+    """Initializes a TensorForestEstimator instance.
+
+    Args:
+      params: ForestHParams object that holds random forest hyperparameters.
+        These parameters will be passed into `model_fn`.
+      device_assigner: An `object` instance that controls how trees get
+        assigned to devices. If `None`, will use
+        `tensor_forest.RandomForestDeviceAssigner`.
+      model_dir: Directory to save model parameters, graph, etc. To continue
+        training a previously saved model, load checkpoints saved to this
+        directory into an estimator.
+      graph_builder_class: An `object` instance that defines how TF graphs for
+        random forest training and inference are built. By default will use
+        `tensor_forest.RandomForestGraphs`.
+      config: `RunConfig` object to configure the runtime settings.
+      weights_name: A string defining feature column name representing
+        weights. Will be multiplied by the loss of the example. Used to
+        downweight or boost examples during training.
+      keys_name: A string defining feature column name representing example
+        keys. Used by `predict_with_keys` method.
+      feature_engineering_fn: Feature engineering function. Takes features and
+        labels which are the output of `input_fn` and returns features and
+        labels which will be fed into the model.
+      early_stopping_rounds: Allows training to terminate early if the forest is
+        no longer growing. 100 by default.
+
+    Returns:
+      A `TensorForestEstimator` instance.
+    """
     self.params = params.fill()
     self.graph_builder_class = graph_builder_class
     self.early_stopping_rounds = early_stopping_rounds
@@ -162,43 +218,61 @@ class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
         model_dir=model_dir,
         config=config,
         feature_engineering_fn=feature_engineering_fn)
+    self._skcompat = estimator.SKCompat(self._estimator)
 
-  def evaluate(
-      self, x=None, y=None, input_fn=None, feed_fn=None, batch_size=None,
-      steps=None, metrics=None, name=None):
+  @property
+  def model_dir(self):
     """See evaluable.Evaluable."""
-    return self._estimator.evaluate(
-        input_fn=input_fn, x=x, y=y, feed_fn=feed_fn,
-        batch_size=batch_size, steps=steps,
-        metrics=metrics, name=name)
+    return self._estimator.model_dir
+
+  def evaluate(self,
+               x=None,
+               y=None,
+               input_fn=None,
+               batch_size=None,
+               steps=None,
+               metrics=None,
+               name=None,
+               checkpoint_path=None,
+               hooks=None):
+    """See evaluable.Evaluable."""
+    if x is not None and y is not None:
+      return self._skcompat.score(x, y, batch_size=batch_size, steps=steps,
+                                  metrics=metrics)
+    elif input_fn is not None:
+      return self._estimator.evaluate(
+          input_fn=input_fn,
+          steps=steps,
+          metrics=metrics,
+          name=name,
+          checkpoint_path=checkpoint_path,
+          hooks=hooks)
+    else:
+      raise ValueError(
+          'evaluate: Must provide either both x and y or input_fn.')
 
   def fit(self, x=None, y=None, input_fn=None, steps=None, batch_size=None,
           monitors=None, max_steps=None):
     """See trainable.Trainable."""
     if not monitors:
       monitors = [TensorForestLossHook(self.early_stopping_rounds)]
-    self._estimator.fit(input_fn=input_fn, x=x, y=y,
-                        batch_size=batch_size, steps=steps, monitors=monitors,
-                        max_steps=max_steps)
+    if x is not None and y is not None:
+      self._skcompat.fit(x, y, batch_size=batch_size, steps=steps,
+                         max_steps=max_steps, monitors=monitors)
+    elif input is not None:
+      self._estimator.fit(input_fn=input_fn, steps=steps, monitors=monitors,
+                          max_steps=max_steps)
+    else:
+      raise ValueError('fit: Must provide either both x and y or input_fn.')
 
-  @deprecated_arg_values(
-      estimator.AS_ITERABLE_DATE, estimator.AS_ITERABLE_INSTRUCTIONS,
-      as_iterable=False)
   def predict_proba(
-      self, x=None, input_fn=None, batch_size=None, outputs=None,
-      as_iterable=True):
+      self, x=None, input_fn=None, batch_size=None):
     """Returns prediction probabilities for given features (classification).
 
     Args:
       x: features.
       input_fn: Input function. If set, x and y must be None.
       batch_size: Override default batch size.
-      outputs: list of `str`, name of the output to predict.
-        If `None`, returns all.
-      as_iterable: If True, return an iterable which keeps yielding predictions
-        for each example until inputs are exhausted. Note: The inputs must
-        terminate if you want the iterable to terminate (e.g. be sure to pass
-        num_epochs=1 if you are using something like read_batch_features).
 
     Returns:
       Numpy array of predicted probabilities (or an iterable of predicted
@@ -207,21 +281,15 @@ class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
     Raises:
       ValueError: If both or neither of x and input_fn were given.
     """
-    results = self._estimator.predict(
-        x=x, input_fn=input_fn, batch_size=batch_size, outputs=outputs,
-        as_iterable=as_iterable)
-
-    if as_iterable:
-      return (x[eval_metrics.INFERENCE_PROB_NAME] for x in results)
-    else:
+    if x is not None:
+      results = self._skcompat.predict(x, batch_size=batch_size)
       return results[eval_metrics.INFERENCE_PROB_NAME]
+    else:
+      results = self._estimator.predict(input_fn=input_fn, as_iterable=True)
+      return (x[eval_metrics.INFERENCE_PROB_NAME] for x in results)
 
-  @deprecated_arg_values(
-      estimator.AS_ITERABLE_DATE, estimator.AS_ITERABLE_INSTRUCTIONS,
-      as_iterable=False)
   def predict(
-      self, x=None, input_fn=None, axis=None, batch_size=None, outputs=None,
-      as_iterable=True):
+      self, x=None, input_fn=None, axis=None, batch_size=None):
     """Returns predictions for given features.
 
     Args:
@@ -230,50 +298,37 @@ class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
       axis: Axis on which to argmax (for classification).
             Last axis is used by default.
       batch_size: Override default batch size.
-      outputs: list of `str`, name of the output to predict.
-        If `None`, returns all.
-      as_iterable: If True, return an iterable which keeps yielding predictions
-        for each example until inputs are exhausted. Note: The inputs must
-        terminate if you want the iterable to terminate (e.g. be sure to pass
-        num_epochs=1 if you are using something like read_batch_features).
 
     Returns:
       Numpy array of predicted classes or regression values (or an iterable of
       predictions if as_iterable is True).
     """
-    results = self._estimator.predict(
-        x=x, input_fn=input_fn, batch_size=batch_size, outputs=outputs,
-        as_iterable=as_iterable)
-
     predict_name = (eval_metrics.INFERENCE_PROB_NAME if self.params.regression
                     else eval_metrics.INFERENCE_PRED_NAME)
-    if as_iterable:
-      return (x[predict_name] for x in results)
-    else:
+    if x is not None:
+      results = self._skcompat.predict(x, batch_size=batch_size)
       return results[predict_name]
+    else:
+      results = self._estimator.predict(input_fn=input_fn, as_iterable=True)
+      return (x[predict_name] for x in results)
 
-  @deprecated_arg_values(
-      estimator.AS_ITERABLE_DATE, estimator.AS_ITERABLE_INSTRUCTIONS,
-      as_iterable=False)
   def predict_with_keys(
-      self, x=None, input_fn=None, axis=None, batch_size=None, outputs=None,
-      as_iterable=True):
+      self, x=None, input_fn=None, axis=None, batch_size=None):
     """Same as predict but also returns the example keys."""
-    results = self._estimator.predict(
-        x=x, input_fn=input_fn, batch_size=batch_size, outputs=outputs,
-        as_iterable=as_iterable)
-
     predict_name = (eval_metrics.INFERENCE_PROB_NAME if self.params.regression
                     else eval_metrics.INFERENCE_PRED_NAME)
-    if as_iterable:
-      return ((x[predict_name], x.get(KEYS_NAME, None)) for x in results)
+    if x is not None:
+      results = self._skcompat.predict(x, batch_size=batch_size)
+      return results[predict_name]
     else:
-      return results[predict_name], results.get(KEYS_NAME, None)
+      results = self._estimator.predict(input_fn=input_fn, as_iterable=True)
+      return ((x[predict_name], x.get(KEYS_NAME, None)) for x in results)
 
   def export(self,
              export_dir,
              input_fn,
              signature_fn=None,
+             input_feature_key=None,
              default_batch_size=1):
     """See BaseEstimator.export."""
     # Reset model function with basic device assigner.
@@ -287,7 +342,9 @@ class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
         weights_name=self.weights_name)
     result = self._estimator.export(
         export_dir=export_dir,
-        use_deprecated_input_fn=True,
+        input_fn=input_fn,
+        input_feature_key=input_feature_key,
+        use_deprecated_input_fn=False,
         signature_fn=(signature_fn or
                       (export.regression_signature_fn
                        if self.params.regression else
@@ -297,3 +354,19 @@ class TensorForestEstimator(evaluable.Evaluable, trainable.Trainable):
     self._estimator._model_fn = orig_model_fn
     # pylint: enable=protected-access
     return result
+
+  @experimental
+  def export_savedmodel(self,
+                        export_dir_base,
+                        input_fn,
+                        default_output_alternative_key=None,
+                        assets_extra=None,
+                        as_text=False,
+                        exports_to_keep=None):
+    return self._estimator.export_savedmodel(
+        export_dir_base,
+        input_fn,
+        default_output_alternative_key=default_output_alternative_key,
+        assets_extra=assets_extra,
+        as_text=as_text,
+        exports_to_keep=exports_to_keep)

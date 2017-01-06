@@ -17,6 +17,8 @@ limitations under the License.
 #define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MASTER_INTERFACE_H_
 
 #include "tensorflow/core/distributed_runtime/call_options.h"
+#include "tensorflow/core/distributed_runtime/message_wrappers.h"
+#include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/master.pb.h"
 
@@ -37,9 +39,27 @@ class MasterInterface {
                                const ExtendSessionRequest* request,
                                ExtendSessionResponse* response) = 0;
 
+  virtual Status PartialRunSetup(CallOptions* call_options,
+                                 const PartialRunSetupRequest* request,
+                                 PartialRunSetupResponse* response) {
+    return errors::Unimplemented("Partial run not implemented for this master");
+  }
+
+  virtual Status RunStep(CallOptions* call_options,
+                         RunStepRequestWrapper* request,
+                         RunStepResponse* response) = 0;
+
   virtual Status RunStep(CallOptions* call_options,
                          const RunStepRequest* request,
-                         RunStepResponse* response) = 0;
+                         RunStepResponse* response) {
+    std::unique_ptr<RunStepRequestWrapper> wrapped_request(
+        new ProtoRunStepRequest(request));
+    return RunStep(call_options, wrapped_request.get(), response);
+  }
+
+  virtual MutableRunStepRequestWrapper* CreateRunStepRequest() {
+    return new MutableProtoRunStepRequest;
+  }
 
   virtual Status CloseSession(CallOptions* call_options,
                               const CloseSessionRequest* request,
