@@ -275,12 +275,15 @@ For the `'SAME'` padding, the output height and width are computed as:
 
 and the padding on the top and left are computed as:
 
-    pad_along_height = ((out_height - 1) * strides[1] +
-                        filter_height - in_height)
-    pad_along_width = ((out_width - 1) * strides[2] +
-                       filter_width - in_width)
-    pad_top = pad_along_height / 2
-    pad_left = pad_along_width / 2
+    pad_along_height = max((out_height - 1) * strides[1] +
+                        filter_height - in_height, 0)
+    pad_along_width = max((out_width - 1) * strides[2] +
+                       filter_width - in_width, 0)
+    pad_top = pad_along_height // 2
+    pad_bottom = pad_along_height - pad_top
+    pad_left = pad_along_width // 2
+    pad_right = pad_along_width - pad_left
+
 
 Note that the division by 2 means that there might be cases when the padding on
 both sides (top vs bottom, right vs left) are off by one. In this case, the
@@ -2177,7 +2180,7 @@ TensorFlow provides several operations that help you perform classification.
 
 - - -
 
-### `tf.nn.sigmoid_cross_entropy_with_logits(logits, targets, name=None)` {#sigmoid_cross_entropy_with_logits}
+### `tf.nn.sigmoid_cross_entropy_with_logits(_sentinel=None, labels=None, logits=None, name=None)` {#sigmoid_cross_entropy_with_logits}
 
 Computes sigmoid cross entropy given `logits`.
 
@@ -2186,7 +2189,7 @@ class is independent and not mutually exclusive.  For instance, one could
 perform multilabel classification where a picture can contain both an elephant
 and a dog at the same time.
 
-For brevity, let `x = logits`, `z = targets`.  The logistic loss is
+For brevity, let `x = logits`, `z = labels`.  The logistic loss is
 
       z * -log(sigmoid(x)) + (1 - z) * -log(1 - sigmoid(x))
     = z * -log(1 / (1 + exp(-x))) + (1 - z) * -log(exp(-x) / (1 + exp(-x)))
@@ -2206,13 +2209,14 @@ equivalent formulation
 
     max(x, 0) - x * z + log(1 + exp(-abs(x)))
 
-`logits` and `targets` must have the same type and shape.
+`logits` and `labels` must have the same type and shape.
 
 ##### Args:
 
+  _sentinel: Used to prevent positional parameters. Internal, do not use.
 
+*  <b>`labels`</b>: A `Tensor` of the same type and shape as `logits`.
 *  <b>`logits`</b>: A `Tensor` of type `float32` or `float64`.
-*  <b>`targets`</b>: A `Tensor` of the same type and shape as `logits`.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -2223,7 +2227,7 @@ equivalent formulation
 ##### Raises:
 
 
-*  <b>`ValueError`</b>: If `logits` and `targets` do not have the same shape.
+*  <b>`ValueError`</b>: If `logits` and `labels` do not have the same shape.
 
 
 - - -
@@ -2288,7 +2292,7 @@ For each batch `i` and class `j` we have
 
 - - -
 
-### `tf.nn.softmax_cross_entropy_with_logits(logits, labels, dim=-1, name=None)` {#softmax_cross_entropy_with_logits}
+### `tf.nn.softmax_cross_entropy_with_logits(_sentinel=None, labels=None, logits=None, dim=-1, name=None)` {#softmax_cross_entropy_with_logits}
 
 Computes softmax cross entropy between `logits` and `labels`.
 
@@ -2312,11 +2316,15 @@ output of `softmax`, as it will produce incorrect results.
 `logits` and `labels` must have the same shape `[batch_size, num_classes]`
 and the same dtype (either `float16`, `float32`, or `float64`).
 
+**Note that to avoid confusion, it is required to pass only named arguments to
+this function.**
+
 ##### Args:
 
+  _sentinel: Used to prevent positional parameters. Internal, do not use.
 
-*  <b>`logits`</b>: Unscaled log probabilities.
 *  <b>`labels`</b>: Each row `labels[i]` must be a valid probability distribution.
+*  <b>`logits`</b>: Unscaled log probabilities.
 *  <b>`dim`</b>: The class dimension. Defaulted to -1 which is the last dimension.
 *  <b>`name`</b>: A name for the operation (optional).
 
@@ -2328,7 +2336,7 @@ and the same dtype (either `float16`, `float32`, or `float64`).
 
 - - -
 
-### `tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name=None)` {#sparse_softmax_cross_entropy_with_logits}
+### `tf.nn.sparse_softmax_cross_entropy_with_logits(_sentinel=None, labels=None, logits=None, name=None)` {#sparse_softmax_cross_entropy_with_logits}
 
 Computes sparse softmax cross entropy between `logits` and `labels`.
 
@@ -2351,16 +2359,20 @@ output of `softmax`, as it will produce incorrect results.
 A common use case is to have logits of shape `[batch_size, num_classes]` and
 labels of shape `[batch_size]`. But higher dimensions are supported.
 
+**Note that to avoid confusion, it is required to pass only named arguments to
+this function.**
+
 ##### Args:
 
+  _sentinel: Used to prevent positional parameters. Internal, do not use.
 
-*  <b>`logits`</b>: Unscaled log probabilities of rank `r` and shape
-    `[d_0, d_1, ..., d_{r-2}, num_classes]` and dtype `float32` or `float64`.
 *  <b>`labels`</b>: `Tensor` of shape `[d_0, d_1, ..., d_{r-2}]` and dtype `int32` or
     `int64`. Each entry in `labels` must be an index in `[0, num_classes)`.
     Other values will raise an exception when this op is run on CPU, and
     return `NaN` for corresponding corresponding loss and gradient rows
     on GPU.
+*  <b>`logits`</b>: Unscaled log probabilities of rank `r` and shape
+    `[d_0, d_1, ..., d_{r-2}, num_classes]` and dtype `float32` or `float64`.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -2688,110 +2700,6 @@ for correctness than performance, unlike in rnn().
 
 - - -
 
-### `tf.nn.rnn(cell, inputs, initial_state=None, dtype=None, sequence_length=None, scope=None)` {#rnn}
-
-Creates a recurrent neural network specified by RNNCell `cell`.
-
-The simplest form of RNN network generated is:
-
-```python
-  state = cell.zero_state(...)
-  outputs = []
-  for input_ in inputs:
-    output, state = cell(input_, state)
-    outputs.append(output)
-  return (outputs, state)
-```
-However, a few other options are available:
-
-An initial state can be provided.
-If the sequence_length vector is provided, dynamic calculation is performed.
-This method of calculation does not compute the RNN steps past the maximum
-sequence length of the minibatch (thus saving computational time),
-and properly propagates the state at an example's sequence length
-to the final state output.
-
-The dynamic calculation performed is, at time `t` for batch row `b`,
-
-```python
-  (output, state)(b, t) =
-    (t >= sequence_length(b))
-      ? (zeros(cell.output_size), states(b, sequence_length(b) - 1))
-      : cell(input(b, t), state(b, t - 1))
-```
-
-##### Args:
-
-
-*  <b>`cell`</b>: An instance of RNNCell.
-*  <b>`inputs`</b>: A length T list of inputs, each a `Tensor` of shape
-    `[batch_size, input_size]`, or a nested tuple of such elements.
-*  <b>`initial_state`</b>: (optional) An initial state for the RNN.
-    If `cell.state_size` is an integer, this must be
-    a `Tensor` of appropriate type and shape `[batch_size, cell.state_size]`.
-    If `cell.state_size` is a tuple, this should be a tuple of
-    tensors having shapes `[batch_size, s] for s in cell.state_size`.
-*  <b>`dtype`</b>: (optional) The data type for the initial state and expected output.
-    Required if initial_state is not provided or RNN state has a heterogeneous
-    dtype.
-*  <b>`sequence_length`</b>: Specifies the length of each sequence in inputs.
-    An int32 or int64 vector (tensor) size `[batch_size]`, values in `[0, T)`.
-*  <b>`scope`</b>: VariableScope for the created subgraph; defaults to "rnn".
-
-##### Returns:
-
-  A pair (outputs, state) where:
-
-  - outputs is a length T list of outputs (one for each input), or a nested
-    tuple of such elements.
-  - state is the final state
-
-##### Raises:
-
-
-*  <b>`TypeError`</b>: If `cell` is not an instance of RNNCell.
-*  <b>`ValueError`</b>: If `inputs` is `None` or an empty list, or if the input depth
-    (column size) cannot be inferred from inputs via shape inference.
-
-
-- - -
-
-### `tf.nn.state_saving_rnn(cell, inputs, state_saver, state_name, sequence_length=None, scope=None)` {#state_saving_rnn}
-
-RNN that accepts a state saver for time-truncated RNN calculation.
-
-##### Args:
-
-
-*  <b>`cell`</b>: An instance of `RNNCell`.
-*  <b>`inputs`</b>: A length T list of inputs, each a `Tensor` of shape
-    `[batch_size, input_size]`.
-*  <b>`state_saver`</b>: A state saver object with methods `state` and `save_state`.
-*  <b>`state_name`</b>: Python string or tuple of strings.  The name to use with the
-    state_saver. If the cell returns tuples of states (i.e.,
-    `cell.state_size` is a tuple) then `state_name` should be a tuple of
-    strings having the same length as `cell.state_size`.  Otherwise it should
-    be a single string.
-*  <b>`sequence_length`</b>: (optional) An int32/int64 vector size [batch_size].
-    See the documentation for rnn() for more details about sequence_length.
-*  <b>`scope`</b>: VariableScope for the created subgraph; defaults to "rnn".
-
-##### Returns:
-
-  A pair (outputs, state) where:
-    outputs is a length T list of outputs (one for each input)
-    states is the final state
-
-##### Raises:
-
-
-*  <b>`TypeError`</b>: If `cell` is not an instance of RNNCell.
-*  <b>`ValueError`</b>: If `inputs` is `None` or an empty list, or if the arity and
-   type of `state_name` does not match that of `cell.state_size`.
-
-
-- - -
-
 ### `tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, inputs, sequence_length=None, initial_state_fw=None, initial_state_bw=None, dtype=None, parallel_iterations=None, swap_memory=False, time_major=False, scope=None)` {#bidirectional_dynamic_rnn}
 
 Creates a dynamic version of bidirectional recurrent neural network.
@@ -2875,57 +2783,6 @@ given.
 
 
 *  <b>`TypeError`</b>: If `cell_fw` or `cell_bw` is not an instance of `RNNCell`.
-
-
-- - -
-
-### `tf.nn.bidirectional_rnn(cell_fw, cell_bw, inputs, initial_state_fw=None, initial_state_bw=None, dtype=None, sequence_length=None, scope=None)` {#bidirectional_rnn}
-
-Creates a bidirectional recurrent neural network.
-
-Similar to the unidirectional case above (rnn) but takes input and builds
-independent forward and backward RNNs with the final forward and backward
-outputs depth-concatenated, such that the output will have the format
-[time][batch][cell_fw.output_size + cell_bw.output_size]. The input_size of
-forward and backward cell must match. The initial state for both directions
-is zero by default (but can be set optionally) and no intermediate states are
-ever returned -- the network is fully unrolled for the given (passed in)
-length(s) of the sequence(s) or completely unrolled if length(s) is not given.
-
-##### Args:
-
-
-*  <b>`cell_fw`</b>: An instance of RNNCell, to be used for forward direction.
-*  <b>`cell_bw`</b>: An instance of RNNCell, to be used for backward direction.
-*  <b>`inputs`</b>: A length T list of inputs, each a tensor of shape
-    [batch_size, input_size], or a nested tuple of such elements.
-*  <b>`initial_state_fw`</b>: (optional) An initial state for the forward RNN.
-    This must be a tensor of appropriate type and shape
-    `[batch_size, cell_fw.state_size]`.
-    If `cell_fw.state_size` is a tuple, this should be a tuple of
-    tensors having shapes `[batch_size, s] for s in cell_fw.state_size`.
-*  <b>`initial_state_bw`</b>: (optional) Same as for `initial_state_fw`, but using
-    the corresponding properties of `cell_bw`.
-*  <b>`dtype`</b>: (optional) The data type for the initial state.  Required if
-    either of the initial states are not provided.
-*  <b>`sequence_length`</b>: (optional) An int32/int64 vector, size `[batch_size]`,
-    containing the actual lengths for each of the sequences.
-*  <b>`scope`</b>: VariableScope for the created subgraph; defaults to
-    "bidirectional_rnn"
-
-##### Returns:
-
-  A tuple (outputs, output_state_fw, output_state_bw) where:
-    outputs is a length `T` list of outputs (one for each input), which
-      are depth-concatenated forward and backward outputs.
-    output_state_fw is the final state of the forward rnn.
-    output_state_bw is the final state of the backward rnn.
-
-##### Raises:
-
-
-*  <b>`TypeError`</b>: If `cell_fw` or `cell_bw` is not an instance of `RNNCell`.
-*  <b>`ValueError`</b>: If inputs is None or an empty list.
 
 
 - - -

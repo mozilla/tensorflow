@@ -124,7 +124,7 @@ def tf_copts():
   return (["-DEIGEN_AVOID_STL_ARRAY",
            "-Iexternal/gemmlowp",
            "-Wno-sign-compare",
-           "-fno-exceptions"] +
+           "-fno-exceptions",] +
           if_cuda(["-DGOOGLE_CUDA=1"]) +
           if_android_arm(["-mfpu=neon"]) +
           if_x86(["-msse4.1"]) +
@@ -329,7 +329,7 @@ def tf_cc_test_gpu(name, srcs, deps, linkstatic=0, tags=[], data=[],
   tf_cc_test(name, srcs, deps, linkstatic=linkstatic, tags=tags, data=data,
              size=size, suffix=suffix, args=args)
 
-def tf_cuda_cc_test(name, srcs, deps, tags=[], data=[], size="medium",
+def tf_cuda_cc_test(name, srcs=[], deps=[], tags=[], data=[], size="medium",
                     linkstatic=0, args=[], linkopts=[]):
   tf_cc_test(name=name,
              srcs=srcs,

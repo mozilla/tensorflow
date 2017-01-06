@@ -179,6 +179,13 @@ class DebugTensorDatumTest(test_util.TensorFlowTestCase):
                                                               datum.timestamp),
                      repr(datum))
 
+  def testDumpSizeBytesIsNoneForNonexistentFilePath(self):
+    dump_root = "/tmp/tfdbg_1"
+    debug_dump_rel_path = "ns1/ns2/node_foo_1_2_DebugIdentity_1472563253536385"
+    datum = debug_data.DebugTensorDatum(dump_root, debug_dump_rel_path)
+
+    self.assertIsNone(datum.dump_size_bytes)
+
 
 class DebugDumpDirTest(test_util.TensorFlowTestCase):
 
@@ -207,6 +214,20 @@ class DebugDumpDirTest(test_util.TensorFlowTestCase):
 
     self.assertIsNone(dump_dir.t0)
     self.assertEqual([], dump_dir.dumped_tensor_data)
+
+
+class GetNodeNameAndOutputSlotTest(test_util.TensorFlowTestCase):
+
+  def testParseTensorNameInputWorks(self):
+    self.assertEqual("a", debug_data.get_node_name("a:0"))
+    self.assertEqual(0, debug_data.get_output_slot("a:0"))
+
+    self.assertEqual("_b", debug_data.get_node_name("_b:1"))
+    self.assertEqual(1, debug_data.get_output_slot("_b:1"))
+
+  def testParseNodeNameInputWorks(self):
+    self.assertEqual("a", debug_data.get_node_name("a"))
+    self.assertEqual(0, debug_data.get_output_slot("a"))
 
 
 if __name__ == "__main__":

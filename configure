@@ -4,7 +4,7 @@ set -e
 set -o pipefail
 
 # Find out the absolute path to where ./configure resides
-pushd `dirname $0` #> /dev/null
+pushd `dirname $0` > /dev/null
 SOURCE_BASE_DIR=`pwd -P`
 popd > /dev/null
 
@@ -145,7 +145,7 @@ while [ "$TF_NEED_CUDA" == "" ]; do
 done
 
 export TF_NEED_CUDA
-export TF_NEED_SYCL
+export TF_NEED_OPENCL
 if [[ "$TF_NEED_CUDA" == "0" ]] && [[ "$TF_NEED_OPENCL" == "0" ]]; then
   echo "Configuration finished"
   bazel_clean_and_fetch
@@ -391,7 +391,7 @@ if [ "$TF_NEED_OPENCL" == "1" ]; then
 while true; do
   fromuser=""
   if [ -z "$HOST_CXX_COMPILER" ]; then
-    default_cxx_host_compiler=$(which g++|| true)
+    default_cxx_host_compiler=$(which clang++-3.6 || true)
     read -p "Please specify which C++ compiler should be used as the host C++ compiler. [Default is $default_cxx_host_compiler]: " HOST_CXX_COMPILER
     fromuser="1"
     if [ -z "$HOST_CXX_COMPILER" ]; then
@@ -414,7 +414,7 @@ done
 while true; do
   fromuser=""
   if [ -z "$HOST_C_COMPILER" ]; then
-    default_c_host_compiler=$(which gcc|| true)
+    default_c_host_compiler=$(which clang-3.6 || true)
     read -p "Please specify which C compiler should be used as the host C compiler. [Default is $default_c_host_compiler]: " HOST_C_COMPILER
     fromuser="1"
     if [ -z "$HOST_C_COMPILER" ]; then
@@ -465,7 +465,6 @@ while true; do
   COMPUTECPP_TOOLKIT_PATH=""
 done
 
-export TF_NEED_OPENCL
 # end of if "$TF_NEED_OPENCL" == "1"
 fi
 
