@@ -21,14 +21,21 @@ pushd ~/DeepSpeech/tf/
     TF_NEED_GCP=0
     TF_NEED_HDFS=0
     TF_NEED_OPENCL=0
+    TF_NEED_JEMALLOC=1
+    TF_ENABLE_XLA=n
     GCC_HOST_COMPILER_PATH=/usr/bin/gcc
+    # Westmere released in january 2010, died in 2011 (SandyBridge)
+    CC_OPT_FLAGS="-march=westmere -msse4.1 -msse4.2"
 
     export PYTHON_BIN_PATH
     export PYTHONPATH
     export TF_NEED_GCP
     export TF_NEED_HDFS
     export TF_NEED_OPENCL
+    export TF_NEED_JEMALLOC
+    export TF_ENABLE_XLA
     export GCC_HOST_COMPILER_PATH
+    export CC_OPT_FLAGS
 
     if [ "${build_gpu}" = "no" ]; then
         echo "" | TF_NEED_CUDA=0 ./configure && bazel build -c opt //tensorflow/tools/pip_package:build_pip_package && ./tensorflow/tools/pip_package/build_pip_package.sh /tmp/tensorflow_pkg/
