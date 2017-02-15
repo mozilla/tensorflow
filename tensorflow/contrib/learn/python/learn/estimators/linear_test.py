@@ -36,6 +36,7 @@ from tensorflow.contrib.learn.python.learn.datasets import base
 from tensorflow.contrib.learn.python.learn.estimators import _sklearn
 from tensorflow.contrib.learn.python.learn.estimators import estimator
 from tensorflow.contrib.learn.python.learn.estimators import estimator_test_utils
+from tensorflow.contrib.learn.python.learn.estimators import head as head_lib
 from tensorflow.contrib.learn.python.learn.estimators import linear
 from tensorflow.contrib.learn.python.learn.estimators import run_config
 from tensorflow.contrib.learn.python.learn.estimators import test_data
@@ -331,7 +332,8 @@ class LinearClassifierTest(test.TestCase):
         set(['loss', 'my_accuracy', 'my_precision', 'my_metric']).issubset(
             set(scores.keys())))
     predict_input_fn = functools.partial(_input_fn, num_epochs=1)
-    predictions = np.array(list(classifier.predict(input_fn=predict_input_fn)))
+    predictions = np.array(list(classifier.predict_classes(
+        input_fn=predict_input_fn)))
     self.assertEqual(
         _sklearn.accuracy_score([1, 0, 0, 0], predictions),
         scores['my_accuracy'])
@@ -454,7 +456,7 @@ class LinearClassifierTest(test.TestCase):
     classifier.fit(input_fn=input_fn, steps=30)
     predict_input_fn = functools.partial(input_fn, num_epochs=1)
     out1_class = list(
-        classifier.predict(
+        classifier.predict_classes(
             input_fn=predict_input_fn, as_iterable=True))
     out1_proba = list(
         classifier.predict_proba(
@@ -464,7 +466,7 @@ class LinearClassifierTest(test.TestCase):
     classifier2 = linear.LinearClassifier(
         model_dir=model_dir, feature_columns=[age, language])
     out2_class = list(
-        classifier2.predict(
+        classifier2.predict_classes(
             input_fn=predict_input_fn, as_iterable=True))
     out2_proba = list(
         classifier2.predict_proba(
@@ -591,7 +593,7 @@ class LinearClassifierTest(test.TestCase):
     self.assertNotIn('centered_bias_weight', classifier.get_variable_names())
 
   def testEnableCenteredBias(self):
-    """Tests that we can disable centered bias."""
+    """Tests that we can enable centered bias."""
 
     def input_fn():
       return {
@@ -609,7 +611,8 @@ class LinearClassifierTest(test.TestCase):
     classifier = linear.LinearClassifier(
         feature_columns=[age, language], enable_centered_bias=True)
     classifier.fit(input_fn=input_fn, steps=100)
-    self.assertIn('centered_bias_weight', classifier.get_variable_names())
+    self.assertIn('linear/binary_logistic_head/centered_bias_weight',
+                  classifier.get_variable_names())
 
   def testTrainOptimizerWithL1Reg(self):
     """Tests l1 regularized model has higher loss."""
@@ -1102,8 +1105,11 @@ class LinearRegressorTest(test.TestCase):
 
     scores = regressor.evaluate(input_fn=_input_fn, steps=1)
     self.assertLess(scores['loss'], 0.1)
+    predicted_scores = regressor.predict_scores(
+        input_fn=_input_fn, as_iterable=False)
+    self.assertAllClose(labels, predicted_scores, atol=0.1)
     predictions = regressor.predict(input_fn=_input_fn, as_iterable=False)
-    self.assertAllClose(labels, predictions, atol=0.1)
+    self.assertAllClose(predicted_scores, predictions)
 
   def testPredict_AsIterable(self):
     """Tests predict method with as_iterable=True."""
@@ -1138,10 +1144,14 @@ class LinearRegressorTest(test.TestCase):
     scores = regressor.evaluate(input_fn=_input_fn, steps=1)
     self.assertLess(scores['loss'], 0.1)
     predict_input_fn = functools.partial(_input_fn, num_epochs=1)
+    predicted_scores = list(
+        regressor.predict_scores(
+            input_fn=predict_input_fn, as_iterable=True))
+    self.assertAllClose(labels, predicted_scores, atol=0.1)
     predictions = list(
         regressor.predict(
             input_fn=predict_input_fn, as_iterable=True))
-    self.assertAllClose(labels, predictions, atol=0.1)
+    self.assertAllClose(predicted_scores, predictions)
 
   def testCustomMetrics(self):
     """Tests custom evaluation metrics."""
@@ -1182,7 +1192,8 @@ class LinearRegressorTest(test.TestCase):
     self.assertIn('my_error', set(scores.keys()))
     self.assertIn('my_metric', set(scores.keys()))
     predict_input_fn = functools.partial(_input_fn, num_epochs=1)
-    predictions = np.array(list(regressor.predict(input_fn=predict_input_fn)))
+    predictions = np.array(list(
+        regressor.predict_scores(input_fn=predict_input_fn)))
     self.assertAlmostEqual(
         _sklearn.mean_squared_error(np.array([1, 0, 0, 0]), predictions),
         scores['my_error'])
@@ -1251,12 +1262,12 @@ class LinearRegressorTest(test.TestCase):
 
     regressor.fit(input_fn=_input_fn, steps=100)
     predict_input_fn = functools.partial(_input_fn, num_epochs=1)
-    predictions = list(regressor.predict(input_fn=predict_input_fn))
+    predictions = list(regressor.predict_scores(input_fn=predict_input_fn))
     del regressor
 
     regressor2 = linear.LinearRegressor(
         model_dir=model_dir, feature_columns=feature_columns)
-    predictions2 = list(regressor2.predict(input_fn=predict_input_fn))
+    predictions2 = list(regressor2.predict_scores(input_fn=predict_input_fn))
     self.assertAllClose(predictions, predictions2)
 
   def testTrainWithPartitionedVariables(self):
@@ -1615,6 +1626,92 @@ class LinearRegressorTest(test.TestCase):
         regressor.get_variable_value('linear/bias_weight')[0], 0.0, err=0.05)
     self.assertNear(regressor.weights_['linear/a/weight'][0], 0.1, err=0.05)
     self.assertNear(regressor.weights_['linear/b/weight'][0], -0.1, err=0.05)
+
+
+class LinearEstimatorTest(test.TestCase):
+
+  def testExperimentIntegration(self):
+    cont_features = [
+        feature_column_lib.real_valued_column(
+            'feature', dimension=4)
+    ]
+    exp = experiment.Experiment(
+        estimator=linear._LinearEstimator(feature_columns=cont_features,
+                                          head=head_lib._regression_head()),
+        train_input_fn=test_data.iris_input_logistic_fn,
+        eval_input_fn=test_data.iris_input_logistic_fn)
+    exp.test()
+
+  def testEstimatorContract(self):
+    estimator_test_utils.assert_estimator_contract(self,
+                                                   linear._LinearEstimator)
+
+  def testLinearRegression(self):
+    """Tests that loss goes down with training."""
+
+    def input_fn():
+      return {
+          'age':
+              constant_op.constant([1]),
+          'language':
+              sparse_tensor.SparseTensor(
+                  values=['english'], indices=[[0, 0]], dense_shape=[1, 1])
+      }, constant_op.constant([[10.]])
+
+    language = feature_column_lib.sparse_column_with_hash_bucket('language',
+                                                                 100)
+    age = feature_column_lib.real_valued_column('age')
+
+    linear_estimator = linear._LinearEstimator(feature_columns=[age, language],
+                                               head=head_lib._regression_head())
+    linear_estimator.fit(input_fn=input_fn, steps=100)
+    loss1 = linear_estimator.evaluate(input_fn=input_fn, steps=1)['loss']
+    linear_estimator.fit(input_fn=input_fn, steps=400)
+    loss2 = linear_estimator.evaluate(input_fn=input_fn, steps=1)['loss']
+
+    self.assertLess(loss2, loss1)
+    self.assertLess(loss2, 0.5)
+
+  def testPoissonRegression(self):
+    """Tests that loss goes down with training."""
+
+    def input_fn():
+      return {
+          'age':
+              constant_op.constant([1]),
+          'language':
+              sparse_tensor.SparseTensor(
+                  values=['english'], indices=[[0, 0]], dense_shape=[1, 1])
+      }, constant_op.constant([[10.]])
+
+    language = feature_column_lib.sparse_column_with_hash_bucket('language',
+                                                                 100)
+    age = feature_column_lib.real_valued_column('age')
+
+    linear_estimator = linear._LinearEstimator(
+        feature_columns=[age, language],
+        head=head_lib._poisson_regression_head())
+    linear_estimator.fit(input_fn=input_fn, steps=10)
+    loss1 = linear_estimator.evaluate(input_fn=input_fn, steps=1)['loss']
+    linear_estimator.fit(input_fn=input_fn, steps=100)
+    loss2 = linear_estimator.evaluate(input_fn=input_fn, steps=1)['loss']
+
+    self.assertLess(loss2, loss1)
+    # Here loss of 2.1 implies a prediction of ~9.9998
+    self.assertLess(loss2, 2.1)
+
+  def testSDCANotSupported(self):
+    """Tests that we detect error for SDCA."""
+    maintenance_cost = feature_column_lib.real_valued_column('maintenance_cost')
+    sq_footage = feature_column_lib.real_valued_column('sq_footage')
+    sdca_optimizer = sdca_optimizer_lib.SDCAOptimizer(
+        example_id_column='example_id')
+    with self.assertRaises(ValueError):
+      linear._LinearEstimator(
+          head=head_lib._regression_head(label_dimension=1),
+          feature_columns=[maintenance_cost, sq_footage],
+          optimizer=sdca_optimizer,
+          _joint_weights=True)
 
 
 def boston_input_fn():

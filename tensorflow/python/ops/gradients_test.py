@@ -112,9 +112,9 @@ class GradientsTest(test_util.TensorFlowTestCase):
       t2 = constant(2.0)
       t3 = array_ops.stack([t1, t2])
       t4 = constant([1.0])
-      t5 = array_ops.concat_v2([t4, t3], 0)
+      t5 = array_ops.concat([t4, t3], 0)
       t6 = constant([2.0])
-      t7 = array_ops.concat_v2([t5, t6], 0)
+      t7 = array_ops.concat([t5, t6], 0)
     self._assertOpListEqual([t7.op, t5.op, t4.op],
                             _OpsBetween(g, [t7.op], [t4.op]))
 
@@ -123,10 +123,10 @@ class GradientsTest(test_util.TensorFlowTestCase):
       t1 = constant(1.0)
       t2 = constant(2.0)
       t3 = array_ops.stack([t1, t2])
-      t4 = array_ops.concat_v2([t3, t3, t3], 0)
+      t4 = array_ops.concat([t3, t3, t3], 0)
       t5 = constant([1.0])
-      t6 = array_ops.concat_v2([t4, t5], 0)
-      t7 = array_ops.concat_v2([t6, t3], 0)
+      t6 = array_ops.concat([t4, t5], 0)
+      t7 = array_ops.concat([t6, t3], 0)
     self._assertOpListEqual([t6.op, t4.op, t3.op],
                             _OpsBetween(g, [t6.op], [t3.op]))
     self._assertOpListEqual([t7.op, t6.op, t5.op, t4.op, t3.op, t1.op],
@@ -411,6 +411,16 @@ class StopGradientTest(test_util.TensorFlowTestCase):
     assert igrad is None
 
 
+class PreventGradientTest(test_util.TensorFlowTestCase):
+
+  def testPreventGradient(self):
+    with ops.Graph().as_default():
+      inp = constant(1.0, shape=[100, 32], name="in")
+      out = array_ops.prevent_gradient(inp)
+      with self.assertRaisesRegexp(LookupError, "explicitly disabled"):
+        _ = gradients.gradients(out, inp)
+
+
 class HessianVectorProductTest(test_util.TensorFlowTestCase):
 
   def testHessianVectorProduct(self):
@@ -557,6 +567,18 @@ class IndexedSlicesToTensorTest(test_util.TensorFlowTestCase):
     self.assertTrue(
         "of unknown shape. This may consume a large amount of memory." in
         str(w[0].message))
+
+
+class OnlyRealGradientsTest(test_util.TensorFlowTestCase):
+
+  def testRealOnly(self):
+    x = constant_op.constant(7+3j, dtype=dtypes.complex64)
+    y = math_ops.square(x)
+    with self.assertRaisesRegexp(
+        TypeError,
+        r"Gradients of complex tensors must set grad_ys "
+        r"\(y\.dtype = tf\.complex64\)"):
+      gradients.gradients(y, x)
 
 
 if __name__ == "__main__":

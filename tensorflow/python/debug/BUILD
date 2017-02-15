@@ -31,7 +31,7 @@ py_library(
 
 py_library(
     name = "debug_data",
-    srcs = ["debug_data.py"],
+    srcs = ["lib/debug_data.py"],
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/python:framework",
@@ -42,16 +42,17 @@ py_library(
 
 py_library(
     name = "debug_utils",
-    srcs = ["debug_utils.py"],
+    srcs = ["lib/debug_utils.py"],
     srcs_version = "PY2AND3",
 )
 
 py_library(
     name = "stepper",
-    srcs = ["stepper.py"],
+    srcs = ["lib/stepper.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":debug_data",
+        ":debug_utils",
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:session_ops",
         "@six_archive//:six",
@@ -118,9 +119,9 @@ py_library(
     deps = [
         ":cli_shared",
         ":command_parser",
-        ":curses_ui",
         ":debug_data",
         ":debugger_cli_common",
+        ":ui_factory",
         "@six_archive//:six",
     ],
 )
@@ -141,15 +142,63 @@ py_library(
 )
 
 py_library(
+    name = "base_ui",
+    srcs = ["cli/base_ui.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":command_parser",
+        ":debugger_cli_common",
+    ],
+)
+
+py_library(
     name = "curses_ui",
     srcs = ["cli/curses_ui.py"],
     srcs_version = "PY2AND3",
     deps = [
+        ":base_ui",
         ":command_parser",
         ":debugger_cli_common",
         ":tensor_format",
         "@six_archive//:six",
     ],
+)
+
+py_library(
+    name = "readline_ui",
+    srcs = ["cli/readline_ui.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":base_ui",
+        ":debugger_cli_common",
+    ],
+)
+
+py_library(
+    name = "ui_factory",
+    srcs = ["cli/ui_factory.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":curses_ui",
+        ":readline_ui",
+    ],
+)
+
+py_library(
+    name = "dumping_wrapper",
+    srcs = ["wrappers/dumping_wrapper.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":debug_data",
+        ":framework",
+    ],
+)
+
+py_library(
+    name = "grpc_wrapper",
+    srcs = ["wrappers/grpc_wrapper.py"],
+    srcs_version = "PY2AND3",
+    deps = [":framework"],
 )
 
 py_library(
@@ -159,11 +208,11 @@ py_library(
     deps = [
         ":analyzer_cli",
         ":cli_shared",
-        ":curses_ui",
         ":debug_data",
         ":debugger_cli_common",
         ":framework",
         ":stepper_cli",
+        ":ui_factory",
     ],
 )
 
@@ -173,6 +222,7 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         ":debug_utils",
+        ":dumping_wrapper",
         ":framework",
         ":local_cli_wrapper",
         ":stepper",
@@ -187,6 +237,7 @@ py_binary(
     deps = [
         ":analyzer_cli",
         ":debug_data",
+        "//tensorflow/python",  # TODO(b/34059704): remove when fixed
         "//tensorflow/python:platform",
     ],
 )
@@ -241,7 +292,7 @@ py_test(
     name = "debug_data_test",
     size = "small",
     srcs = [
-        "debug_data_test.py",
+        "lib/debug_data_test.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
@@ -256,7 +307,7 @@ py_test(
     name = "debug_utils_test",
     size = "small",
     srcs = [
-        "debug_utils_test.py",
+        "lib/debug_utils_test.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
@@ -276,7 +327,7 @@ cuda_py_test(
     name = "stepper_test",
     size = "small",
     srcs = [
-        "stepper_test.py",
+        "lib/stepper_test.py",
     ],
     additional_deps = [
         ":stepper",
@@ -329,9 +380,26 @@ py_test(
     ],
 )
 
+py_test(
+    name = "readline_ui_test",
+    size = "small",
+    srcs = [
+        "cli/readline_ui_test.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":debugger_cli_common",
+        ":readline_ui",
+        ":ui_factory",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:platform_test",
+    ],
+)
+
 py_library(
     name = "session_debug_testlib",
-    srcs = ["session_debug_testlib.py"],
+    srcs = ["lib/session_debug_testlib.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":debug_data",
@@ -340,6 +408,7 @@ py_library(
         "//tensorflow/python:client",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:control_flow_ops",
+        "//tensorflow/python:data_flow_ops",
         "//tensorflow/python:errors",
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
@@ -356,7 +425,7 @@ py_library(
 cuda_py_test(
     name = "session_debug_file_test",
     size = "small",
-    srcs = ["session_debug_file_test.py"],
+    srcs = ["lib/session_debug_file_test.py"],
     additional_deps = [
         ":debug_data",
         ":debug_utils",
@@ -367,6 +436,7 @@ cuda_py_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python:variables",
     ],
+    tags = ["notsan"],
 )
 
 py_test(
@@ -482,6 +552,29 @@ cuda_py_test(
 )
 
 py_test(
+    name = "dumping_wrapper_test",
+    size = "small",
+    srcs = [
+        "wrappers/dumping_wrapper_test.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":dumping_wrapper",
+        ":hooks",
+        ":stepper",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:state_ops",
+        "//tensorflow/python:training",
+        "//tensorflow/python:variables",
+    ],
+)
+
+py_test(
     name = "local_cli_wrapper_test",
     size = "small",
     srcs = [
@@ -489,6 +582,7 @@ py_test(
     ],
     srcs_version = "PY2AND3",
     deps = [
+        ":cli_shared",
         ":debugger_cli_common",
         ":local_cli_wrapper",
         "//tensorflow/python:array_ops",
@@ -499,6 +593,18 @@ py_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python:state_ops",
         "//tensorflow/python:variables",
+    ],
+)
+
+sh_test(
+    name = "examples_test",
+    size = "small",
+    srcs = ["examples/examples_test.sh"],
+    data = [
+        ":debug_errors",
+        ":debug_fibonacci",
+        ":debug_mnist",
+        ":debug_tflearn_iris",
     ],
 )
 

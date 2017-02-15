@@ -179,7 +179,7 @@ class FakeHook(session_run_hook.SessionRunHook):
   def begin(self):
     self.call_counter['begin'] += 1
 
-  def after_create_session(self, session):  # pylint: disable=unused-argument
+  def after_create_session(self, session, coord):  # pylint: disable=unused-argument
     self.call_counter['after_create_session'] += 1
 
   def before_run(self, run_context):
@@ -215,15 +215,37 @@ class MonitoredTrainingSessionTest(test.TestCase):
           is_chief=True, checkpoint_dir=logdir) as session:
         self.assertEqual(2, session.run(gstep))
 
-  def test_summaries(self):
-    logdir = _test_dir(self.get_temp_dir(), 'test_summaries')
+  def test_summaries_steps(self):
+    logdir = _test_dir(self.get_temp_dir(), 'test_summaries_steps')
     with ops.Graph().as_default():
       gstep = variables_lib.get_or_create_global_step()
       new_gstep = state_ops.assign_add(gstep, 1)
       summary.scalar('my_summary_tag', new_gstep * 2)
       with monitored_session.MonitoredTrainingSession(
-          is_chief=True, checkpoint_dir=logdir) as session:
-        for _ in range(101):  # 100 is default summary writing steps
+          is_chief=True,
+          checkpoint_dir=logdir,
+          save_summaries_steps=100) as session:
+        for _ in range(101):
+          session.run(new_gstep)
+    summaries = util_test.latest_summaries(logdir)
+    tags = [s.summary.value[0].tag for s in summaries]
+    self.assertIn('my_summary_tag', tags)
+    self.assertIn('global_step/sec', tags)
+
+  def test_summaries_secs(self):
+    logdir = _test_dir(self.get_temp_dir(), 'test_summaries_secs')
+    with ops.Graph().as_default():
+      gstep = variables_lib.get_or_create_global_step()
+      new_gstep = state_ops.assign_add(gstep, 1)
+      summary.scalar('my_summary_tag', new_gstep * 2)
+      with monitored_session.MonitoredTrainingSession(
+          is_chief=True,
+          checkpoint_dir=logdir,
+          save_summaries_steps=None,
+          save_summaries_secs=0.1) as session:
+        session.run(new_gstep)
+        time.sleep(0.2)
+        for _ in range(101):
           session.run(new_gstep)
     summaries = util_test.latest_summaries(logdir)
     tags = [s.summary.value[0].tag for s in summaries]
@@ -836,6 +858,26 @@ class MonitoredSessionTest(test.TestCase):
               checkpoint_filename_with_path=saver_lib.latest_checkpoint(
                   logdir))) as session:
         self.assertEqual(2, session.run(gstep))
+
+  def test_retry_initialization_on_aborted_error(self):
+    # Tests that we silently retry on abort during initialization.
+    with ops.Graph().as_default():
+      gstep = variables_lib.get_or_create_global_step()
+      self.init_raised_aborted_error = False
+
+      def _init_fn(scaffold, session):
+        _, _ = scaffold, session
+        if not self.init_raised_aborted_error:
+          self.init_raised_aborted_error = True
+          raise errors_impl.AbortedError(None, None, 'Abort')
+
+      with monitored_session.MonitoredSession(
+          session_creator=monitored_session.ChiefSessionCreator(
+              scaffold=monitored_session.Scaffold(
+                  init_fn=_init_fn))) as session:
+        self.assertFalse(session.should_stop())
+        self.assertEqual(0, session.run(gstep))
+      self.assertTrue(self.init_raised_aborted_error)
 
   def test_retry_on_aborted_error(self):
     # Tests that we silently retry on abort.  Note that this does not test

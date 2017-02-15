@@ -7,6 +7,8 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
+load("//tensorflow:tensorflow.bzl", "py_test")
+
 py_library(
     name = "quantize_graph_lib",
     srcs = ["quantize_graph.py"],
@@ -20,6 +22,7 @@ py_binary(
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/core:protos_all_py",
+        "//tensorflow/python",  # TODO(b/34059704): remove when fixed
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client",
         "//tensorflow/python:framework",

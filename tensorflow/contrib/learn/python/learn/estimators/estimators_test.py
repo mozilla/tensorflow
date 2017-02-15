@@ -30,6 +30,7 @@ import numpy as np
 
 from tensorflow.contrib.learn.python import learn
 from tensorflow.contrib.learn.python.learn import datasets
+from tensorflow.contrib.learn.python.learn import metric_spec
 from tensorflow.contrib.learn.python.learn.estimators import estimator as estimator_lib
 from tensorflow.contrib.learn.python.learn.estimators._sklearn import accuracy_score
 from tensorflow.contrib.learn.python.learn.estimators._sklearn import train_test_split
@@ -74,6 +75,12 @@ class FeatureEngineeringFunctionTest(test.TestCase):
     prediction = next(estimator.predict(input_fn=input_fn, as_iterable=True))
     # predictions = transformed_x (9)
     self.assertEqual(9., prediction)
+    metrics = estimator.evaluate(
+        input_fn=input_fn, steps=1,
+        metrics={"label":
+                 metric_spec.MetricSpec(lambda predictions, labels: labels)})
+    # labels = transformed_y (99)
+    self.assertEqual(99., metrics["label"])
 
   def testNoneFeatureEngineeringFn(self):
 
@@ -137,7 +144,7 @@ class CustomOptimizer(test.TestCase):
         optimizer=custom_optimizer,
         config=learn.RunConfig(tf_random_seed=1))
     classifier.fit(x_train, y_train, steps=400)
-    predictions = np.array(list(classifier.predict(x_test)))
+    predictions = np.array(list(classifier.predict_classes(x_test)))
     score = accuracy_score(y_test, predictions)
 
     self.assertGreater(score, 0.65, "Failed with score = {0}".format(score))

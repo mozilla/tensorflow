@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import itertools
 import sys
 
 # TODO: #6568 Remove this hack that makes dlopen() not crash.
@@ -29,18 +30,23 @@ import numpy as np
 
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from tensorflow.contrib.rnn.python.ops import rnn_cell
+from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
+from tensorflow.python.ops import rnn
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import test
+from tensorflow.python.util import nest
 
 
 class RNNCellTest(test.TestCase):
@@ -89,7 +95,7 @@ class RNNCellTest(test.TestCase):
       input_size = 4
       feature_size = 2
       frequency_skip = 1
-      num_shifts = (input_size - feature_size) / frequency_skip + 1
+      num_shifts = (input_size - feature_size) // frequency_skip + 1
       with variable_scope.variable_scope(
           "root", initializer=init_ops.constant_initializer(0.5)):
         x = array_ops.zeros([batch_size, input_size])
@@ -106,7 +112,7 @@ class RNNCellTest(test.TestCase):
                           [2., 2., 2., 2.],
                           [3., 3., 3., 3.]]),
             m.name:
-                0.1 * np.ones((batch_size, state_size * (num_shifts)))
+                0.1 * np.ones((batch_size, int(state_size * (num_shifts))))
         })
         self.assertEqual(len(res), 2)
         # The numbers in results were not calculated, this is mostly just a
@@ -557,7 +563,7 @@ class RNNCellTest(test.TestCase):
                 dtype=dtypes.float32)
             output, state = cell(inputs, zero_state)
             if state_is_tuple:
-              concat_state = array_ops.concat_v2(
+              concat_state = array_ops.concat(
                   [state[0][0], state[0][1], state[1], state[2]], 1)
             else:
               concat_state = state
@@ -575,33 +581,34 @@ class RNNCellTest(test.TestCase):
     attn_length = 6
     batch_size = 2
     expected_output = np.array(
-        [[0.955392, 0.408507, -0.60122, 0.270718],
-         [0.903681, 0.331165, -0.500238, 0.224052]],
+        [[1.068372, 0.45496, -0.678277, 0.340538],
+         [1.018088, 0.378983, -0.572179, 0.268591]],
         dtype=np.float32)
     expected_state = np.array(
-        [[0.81331915, 0.32036272, 0.28079176, 1.08888793, 0.41264394,
-          0.1062041, 0.10444493, 0.32050529, 0.64655536, 0.70794445,
-          0.51896095, 0.31809306, 0.58086717, 0.49446869, 0.7641536,
+        [[0.74946702, 0.34681597, 0.26474735, 1.06485605, 0.38465962,
+          0.11420801, 0.10272158, 0.30925757, 0.63899988, 0.7181077,
+          0.47534478, 0.33715725, 0.58086717, 0.49446869, 0.7641536,
           0.12814975, 0.92231739, 0.89857256, 0.21889746, 0.38442063,
           0.53481543, 0.8876909, 0.45823169, 0.5905602, 0.78038228,
           0.56501579, 0.03971386, 0.09870267, 0.8074435, 0.66821432,
-          0.99211812, 0.12295902, 1.01412082, 0.33123279, -0.71114945,
-          0.40583119],
-         [0.59962207, 0.42597458, -0.22491696, 0.98063421, 0.32548007,
-          0.11623692, -0.10100613, 0.27708149, 0.76956916, 0.6360054,
-          0.51719815, 0.50458527, 0.73000264, 0.66986895, 0.73576689,
+          0.99211812, 0.12295902, 1.14606023, 0.34370938, -0.79251152,
+          0.51843399],
+         [0.5179342, 0.48682183, -0.25426468, 0.96810579, 0.28809637,
+          0.13607743, -0.11446252, 0.26792109, 0.78047138, 0.63460857,
+          0.49122369, 0.52007174, 0.73000264, 0.66986895, 0.73576689,
           0.86301267, 0.87887371, 0.35185754, 0.93417215, 0.64732957,
           0.63173044, 0.66627824, 0.53644657, 0.20477486, 0.98458421,
           0.38277245, 0.03746676, 0.92510188, 0.57714164, 0.84932971,
-          0.36127412, 0.12125921, 0.99780077, 0.31886846, -0.67595094,
-          0.56531656]],
+          0.36127412, 0.12125921, 1.1362772, 0.34361625, -0.78150457,
+          0.70582712]],
         dtype=np.float32)
     seed = 12345
     random_seed.set_random_seed(seed)
     for state_is_tuple in [False, True]:
       with session.Session() as sess:
         with variable_scope.variable_scope(
-            "state_is_tuple", reuse=state_is_tuple):
+            "state_is_tuple", reuse=state_is_tuple,
+            initializer=init_ops.glorot_uniform_initializer()):
           lstm_cell = core_rnn_cell_impl.BasicLSTMCell(
               num_units, state_is_tuple=state_is_tuple)
           cell = rnn_cell.AttentionCellWrapper(
@@ -616,14 +623,14 @@ class RNNCellTest(test.TestCase):
               (batch_size, attn_length * num_units), 0.0, 1.0, seed=seed + 4)
           zero_state = ((zeros1, zeros2), zeros3, attn_state_zeros)
           if not state_is_tuple:
-            zero_state = array_ops.concat_v2([
+            zero_state = array_ops.concat([
                 zero_state[0][0], zero_state[0][1], zero_state[1], zero_state[2]
             ], 1)
           inputs = random_ops.random_uniform(
               (batch_size, num_units), 0.0, 1.0, seed=seed + 5)
           output, state = cell(inputs, zero_state)
           if state_is_tuple:
-            state = array_ops.concat_v2(
+            state = array_ops.concat(
                 [state[0][0], state[0][1], state[1], state[2]], 1)
           sess.run(variables.global_variables_initializer())
           self.assertAllClose(sess.run(output), expected_output)
@@ -646,8 +653,8 @@ class LayerNormBasicLSTMCellTest(test.TestCase):
         h1 = array_ops.zeros([1, 2])
         state1 = core_rnn_cell_impl.LSTMStateTuple(c1, h1)
         state = (state0, state1)
-        cell = rnn_cell.LayerNormBasicLSTMCell(2)
-        cell = core_rnn_cell_impl.MultiRNNCell([cell] * 2)
+        single_cell = lambda: rnn_cell.LayerNormBasicLSTMCell(2)
+        cell = core_rnn_cell_impl.MultiRNNCell([single_cell() for _ in range(2)])
         g, out_m = cell(x, state)
         sess.run([variables.global_variables_initializer()])
         res = sess.run([g, out_m], {
@@ -710,8 +717,11 @@ class LayerNormBasicLSTMCellTest(test.TestCase):
         c1 = array_ops.zeros([1, 2])
         h1 = array_ops.zeros([1, 2])
         state1 = core_rnn_cell_impl.LSTMStateTuple(c1, h1)
-        cell = rnn_cell.LayerNormBasicLSTMCell(2)
-        cell = core_rnn_cell_impl.MultiRNNCell([cell] * 2)
+        def single_cell():
+          return rnn_cell.LayerNormBasicLSTMCell(2)
+
+        cell = core_rnn_cell_impl.MultiRNNCell(
+            [single_cell() for _ in range(2)])
         h, (s0, s1) = cell(x, (state0, state1))
         sess.run([variables.global_variables_initializer()])
         res = sess.run([h, s0, s1], {
@@ -795,6 +805,182 @@ class LayerNormBasicLSTMCellTest(test.TestCase):
           elif _is_close(citem, c_high):
             self.assertTrue(_is_close(hitem, h_high))
         self.assertIn(dropped_count, allowed_low)
+
+
+def _create_multi_lstm_cell_ops(batch_size, num_units, input_depth,
+                                num_layers, max_time, compiled):
+  with variable_scope.variable_scope(
+      "root",
+      initializer=init_ops.random_uniform_initializer(-0.1, 0.1, seed=2)):
+    inputs = variable_scope.get_variable(
+        "inputs", initializer=random_ops.random_uniform(
+            (max_time, batch_size, input_depth), seed=1))
+    maybe_xla = lambda c: rnn_cell.CompiledWrapper(c) if compiled else c
+    cell = core_rnn_cell_impl.MultiRNNCell(
+        [maybe_xla(core_rnn_cell_impl.LSTMCell(num_units))
+         for _ in range(num_layers)])
+    initial_state = cell.zero_state(
+        batch_size=batch_size, dtype=dtypes.float32)
+    outputs, final_state = rnn.dynamic_rnn(
+        cell=cell, inputs=inputs, initial_state=initial_state,
+        time_major=True)
+    flat_final_state = nest.flatten(final_state)
+    trainable_variables = variables.trainable_variables()
+    outputs_grad = gradients_impl.gradients(
+        [outputs],
+        trainable_variables + [inputs] + nest.flatten(initial_state))
+    final_state_grad = gradients_impl.gradients(
+        flat_final_state,
+        trainable_variables + [inputs] + nest.flatten(initial_state))
+
+    return {"outputs": outputs,
+            "final_state": flat_final_state,
+            "outputs_grad": outputs_grad,
+            "final_state_grad": final_state_grad}
+
+
+class CompiledWrapperTest(test.TestCase):
+
+  def testMultiRNNCellWithLSTMCellAndXLA(self):
+    # TODO(b/34735319): Don't run this test if XLA is not available.
+    batch_size = 16
+    num_units = 32
+    input_depth = 12
+    num_layers = 2
+    max_time = 20
+
+    atol = 1e-6
+
+    random_seed.set_random_seed(1234)
+    with self.test_session(graph=ops.Graph()) as sess:
+      xla_ops = _create_multi_lstm_cell_ops(
+          batch_size=batch_size, num_units=num_units,
+          input_depth=input_depth, num_layers=num_layers,
+          max_time=max_time,
+          compiled=True)
+      sess.run([variables.global_variables_initializer()])
+      xla_results = sess.run(xla_ops)
+
+    random_seed.set_random_seed(1234)
+    with self.test_session(graph=ops.Graph()) as sess:
+      non_xla_ops = _create_multi_lstm_cell_ops(
+          batch_size=batch_size, num_units=num_units,
+          input_depth=input_depth, num_layers=num_layers,
+          max_time=max_time,
+          compiled=False)
+      sess.run([variables.global_variables_initializer()])
+      non_xla_results = sess.run(non_xla_ops)
+
+    self.assertAllClose(
+        non_xla_results["outputs"], xla_results["outputs"], atol=atol)
+
+    for xla_value, non_xla_value in zip(
+        xla_results["final_state"], non_xla_results["final_state"]):
+      self.assertAllClose(xla_value, non_xla_value, atol=atol)
+
+    for xla_g, non_xla_g in zip(
+        xla_results["outputs_grad"], non_xla_results["outputs_grad"]):
+      self.assertAllClose(xla_g, non_xla_g, atol=atol)
+
+    for xla_g, non_xla_g in zip(
+        xla_results["final_state_grad"], non_xla_results["final_state_grad"]):
+      self.assertAllClose(xla_g, non_xla_g, atol=atol)
+
+  def testMultiRNNCellWithStateTuple(self):
+    with self.test_session() as sess:
+      with variable_scope.variable_scope(
+          "root", initializer=init_ops.constant_initializer(0.5)):
+        x = array_ops.zeros([1, 2])
+        m_bad = array_ops.zeros([1, 4])
+        m_good = (array_ops.zeros([1, 2]), array_ops.zeros([1, 2]))
+
+        # Test incorrectness of state
+        with self.assertRaisesRegexp(ValueError, "Expected state .* a tuple"):
+          core_rnn_cell_impl.MultiRNNCell(
+              [core_rnn_cell_impl.GRUCell(2) for _ in range(2)],
+              state_is_tuple=True)(x, m_bad)
+
+        _, ml = core_rnn_cell_impl.MultiRNNCell(
+            [core_rnn_cell_impl.GRUCell(2) for _ in range(2)],
+            state_is_tuple=True)(x, m_good)
+
+        sess.run([variables.global_variables_initializer()])
+        res = sess.run(ml, {
+            x.name: np.array([[1., 1.]]),
+            m_good[0].name: np.array([[0.1, 0.1]]),
+            m_good[1].name: np.array([[0.1, 0.1]])
+        })
+
+        # The numbers in results were not calculated, this is just a
+        # smoke test.  However, these numbers should match those of
+        # the test testMultiRNNCell.
+        self.assertAllClose(res[0], [[0.175991, 0.175991]])
+        self.assertAllClose(res[1], [[0.13248, 0.13248]])
+
+
+class BenchmarkLSTMCellXLA(test.Benchmark):
+
+  def benchmarkDynamicRNNWithMultiLSTMCell(self):
+    num_layers = 3
+    max_time = 50
+    print("benchmarkDynamicRNNWithMultiLSTMCell")
+    print("\t" +
+          "\t".join(["inter_th", "intra_th",
+                     "batch_size", "num_units", "input_depth", "device",
+                     "compiled", "wall_time"]))
+
+    warmup_run = True
+    for (threads,
+         device,
+         num_units,
+         batch_size,
+         input_depth,
+         compiled) in itertools.product(
+             [{"inter": 0, "intra": 0}, {"inter": 1, "intra": 4}],
+             ["cpu", "gpu"],
+             [32, 512],
+             [1, 32, 256],
+             [32, 512],
+             [False, True]):
+      if threads["inter"] != 0:
+        # We only care about testing inter/intra op limitations on
+        # CPU with small batch size, to mimic embedded devices.
+        if device != "cpu" or batch_size != 1:
+          continue
+      if device == "cpu" and batch_size > 32:
+        continue
+      random_seed.set_random_seed(1234)
+      config = config_pb2.ConfigProto(
+          inter_op_parallelism_threads=threads["inter"],
+          intra_op_parallelism_threads=threads["intra"],
+          allow_soft_placement=False)
+      with session.Session(config=config, graph=ops.Graph()) as sess:
+        with ops.device("/%s:0" % device):
+          ops_dict = _create_multi_lstm_cell_ops(
+              batch_size=batch_size, num_units=num_units,
+              input_depth=input_depth, num_layers=num_layers,
+              max_time=max_time,
+              compiled=compiled)
+        sess.run([variables.global_variables_initializer()])
+        all_ops = nest.flatten(ops_dict.values())
+        all_ops_group = control_flow_ops.group(*all_ops)
+        name_suffix = (
+            "inter_th_%d_intra_th_%d_bs_%d_units_%d_inputdepth_%d"
+            "_device_%s_xla_%s" % (
+                threads["inter"], threads["intra"],
+                batch_size, num_units, input_depth, device, compiled))
+        if warmup_run:
+          self.run_op_benchmark(
+              sess, all_ops_group, min_iters=30, name="ignore_warmup")
+          warmup_run = False
+        benchmark_results = self.run_op_benchmark(
+            sess, all_ops_group, min_iters=50,
+            name="benchmarkDynamicRNNWithMultiLSTMCell_%s" % name_suffix)
+        print("\t" +
+              "\t".join(["%s" % x for x in [
+                  threads["inter"], threads["intra"],
+                  batch_size, num_units, input_depth, device, compiled,
+                  benchmark_results["wall_time"]]]))
 
 
 if __name__ == "__main__":

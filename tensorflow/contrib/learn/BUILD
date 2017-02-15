@@ -10,6 +10,8 @@ package(default_visibility = [
     "//tensorflow:__subpackages__",
 ])
 
+load("//tensorflow:tensorflow.bzl", "py_test")
+
 py_library(
     name = "learn",
     srcs = [
@@ -32,10 +34,6 @@ py_library(
         "//tensorflow/contrib/rnn:rnn_py",
         "//tensorflow/contrib/session_bundle:exporter",
         "//tensorflow/contrib/session_bundle:gc",
-        "//tensorflow/contrib/tensor_forest:client_lib",
-        "//tensorflow/contrib/tensor_forest:data_ops_py",
-        "//tensorflow/contrib/tensor_forest:eval_metrics",
-        "//tensorflow/contrib/tensor_forest:tensor_forest_py",
         "//tensorflow/contrib/training:training_py",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python:array_ops",
@@ -484,6 +482,7 @@ py_test(
     size = "medium",
     srcs = ["python/learn/estimators/estimator_test.py"],
     srcs_version = "PY2AND3",
+    tags = ["manual"],
     deps = [
         ":learn",
         "//tensorflow/contrib/framework:framework_py",
@@ -508,6 +507,27 @@ py_test(
         "//tensorflow/python/saved_model:tag_constants",
         "//third_party/py/numpy",
         "@six_archive//:six",
+    ],
+)
+
+py_test(
+    name = "estimator_input_test",
+    size = "medium",
+    srcs = ["python/learn/estimators/estimator_input_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":learn",
+        "//tensorflow/contrib/framework:framework_py",
+        "//tensorflow/contrib/layers:layers_py",
+        "//tensorflow/contrib/learn/python/learn/datasets",
+        "//tensorflow/contrib/metrics:metrics_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:data_flow_ops",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:training",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -552,6 +572,7 @@ py_test(
         "//tensorflow/python:init_ops",
         "//tensorflow/python:math_ops",
         "//tensorflow/python:training",
+        "//tensorflow/python/ops/losses",
         "//third_party/py/numpy",
     ],
 )
@@ -674,24 +695,33 @@ py_test(
 )
 
 py_test(
-    name = "random_forest_test",
+    name = "dynamic_rnn_estimator_test",
     size = "medium",
-    srcs = ["python/learn/estimators/random_forest_test.py"],
+    srcs = ["python/learn/estimators/dynamic_rnn_estimator_test.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":learn",
-        "//tensorflow/contrib/learn/python/learn/datasets",
-        "//tensorflow/contrib/tensor_forest:tensor_forest_py",
+        "//tensorflow/contrib/layers:layers_py",
+        "//tensorflow/contrib/rnn:rnn_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client",
         "//tensorflow/python:client_testlib",
+        "//tensorflow/python:data_flow_ops",
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:functional_ops",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:random_ops",
+        "//tensorflow/python:variables",
         "//third_party/py/numpy",
     ],
 )
 
 py_test(
-    name = "dynamic_rnn_estimator_test",
+    name = "state_saving_rnn_estimator_test",
     size = "medium",
-    srcs = ["python/learn/estimators/dynamic_rnn_estimator_test.py"],
+    srcs = ["python/learn/estimators/state_saving_rnn_estimator_test.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":learn",
@@ -718,6 +748,7 @@ py_test(
     srcs = ["python/learn/estimators/linear_test.py"],
     shard_count = 4,
     srcs_version = "PY2AND3",
+    tags = ["no_pip"],
     deps = [
         ":learn",
         "//tensorflow/contrib/layers:layers_py",
@@ -1036,12 +1067,12 @@ py_test(
 
 py_binary(
     name = "inspect_checkpoint",
-    srcs = [
-        "python/learn/utils/inspect_checkpoint.py",
-    ],
+    srcs = ["python/learn/utils/inspect_checkpoint.py"],
     srcs_version = "PY2AND3",
     deps = [
-        "//tensorflow:tensorflow_py",
+        "//tensorflow/contrib/framework:framework_py",
+        "//tensorflow/python",  # TODO(b/34059704): remove when fixed
+        "//tensorflow/python:platform",
     ],
 )
 

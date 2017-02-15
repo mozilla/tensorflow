@@ -23,15 +23,18 @@ import os
 import sys
 import tempfile
 
-# TODO: #6568 Remove this hack that makes dlopen() not crash.
+# pylint: disable=g-bad-todo
+# TODO(#6568): Remove this hack that makes dlopen() not crash.
+# pylint: enable=g-bad-todo
+# pylint: disable=g-import-not-at-top
 if hasattr(sys, "getdlopenflags") and hasattr(sys, "setdlopenflags"):
   import ctypes
   sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 import numpy as np
 
+from tensorflow.contrib.layers.python.layers import feature_column as fc
 from tensorflow.contrib.layers.python.layers import feature_column_ops
-import tensorflow.contrib.layers.python.layers.feature_column as fc
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import sparse_tensor as sparse_tensor_lib
@@ -228,6 +231,13 @@ class FeatureColumnTest(test.TestCase):
         one_hot_value = sess.run(one_hot_output)
         expected_shape = (id_tensor_shape[:output_rank - 1] + [vocab_size])
         self.assertEquals(expected_shape, list(one_hot_value.shape))
+
+  def testOneHotColumnForWeightedSparseColumn(self):
+    ids = fc.sparse_column_with_keys("ids", ["marlo", "omar", "stringer"])
+    weighted_ids = fc.weighted_sparse_column(ids, "weights")
+    one_hot = fc.one_hot_column(weighted_ids)
+    self.assertEqual(one_hot.sparse_id_column.name, "ids_weighted_by_weights")
+    self.assertEqual(one_hot.length, 3)
 
   def testRealValuedColumn(self):
     a = fc.real_valued_column("aaa")

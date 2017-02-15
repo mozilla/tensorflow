@@ -17,14 +17,14 @@ bad numerical values (`nan`s and `inf`s) causing training to fail.
 To **observe** such an issue, run the following code without the debugger:
 
 ```none
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_mnist.py
+python -m tensorflow.python.debug.examples.debug_mnist
 ```
 
 This code trains a simple NN for MNIST digit image recognition. Notice that the
 accuracy increases slightly after the first training step, but then gets stuck
 at a low (near-chance) level:
 
-![debug_mnist training fails](tfdbg_screenshot_mnist_symptom.png)
+![debug_mnist training fails](../../images/tfdbg_screenshot_mnist_symptom.png)
 
 Scratching your head, you suspect that certain nodes in the training graph
 generated bad numeric values such as `inf`s and `nan`s. The computation-graph
@@ -80,14 +80,14 @@ Let's try training the model again with debugging enabled. Execute the command
 from above, this time with the `--debug` flag added:
 
 ```none
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_mnist.py --debug
+python -m tensorflow.python.debug.examples.debug_mnist --debug
 ```
 
 The debug wrapper session will prompt you when it is about to execute the first
 `run()` call, with information regarding the fetched tensor and feed
 dictionaries displayed on the screen.
 
-![tfdbg run-start UI](tfdbg_screenshot_run_start.png)
+![tfdbg run-start UI](../../images/tfdbg_screenshot_run_start.png)
 
 This is what we refer to as the *run-start UI*. If the screen size is
 too small to display the content of the message in its entirety, you can resize
@@ -106,7 +106,9 @@ intermedate tensors from the run. (These tensors can also be obtained by
 running the command `lt` after you executed `run`.) This is called the
 **run-end UI**:
 
-![tfdbg run-end UI: accuracy](tfdbg_screenshot_run_end_accuracy.png)
+![tfdbg run-end UI: accuracy](../../images/tfdbg_screenshot_run_end_accuracy.png)
+
+### tfdbg CLI Frequently-Used Commands
 
 Try the following commands at the `tfdbg>` prompt (referencing the code at
 `tensorflow/python/debug/examples/debug_mnist.py`):
@@ -172,7 +174,7 @@ screen with a red-colored title line indicating **tfdbg** stopped immediately
 after a `run()` call generated intermediate tensors that passed the specified
 filter `has_inf_or_nan`:
 
-![tfdbg run-end UI: infs and nans](tfdbg_screenshot_run_end_inf_nan.png)
+![tfdbg run-end UI: infs and nans](../../images/tfdbg_screenshot_run_end_inf_nan.png)
 
 As the screen display indicates, the `has_inf_or_nan` filter is first passed
 during the fourth `run()` call: an [Adam optimizer](https://arxiv.org/abs/1412.6980)
@@ -211,7 +213,7 @@ item on the top or entering the equivalent command:
 tfdbg> ni cross_entropy/Log
 ```
 
-![tfdbg run-end UI: infs and nans](tfdbg_screenshot_run_end_node_info.png)
+![tfdbg run-end UI: infs and nans](../../images/tfdbg_screenshot_run_end_node_info.png)
 
 You can see that this node has the op type `Log`
 and that its input is the node `softmax/Softmax`. Run the following command to
@@ -253,7 +255,7 @@ diff = y_ * tf.log(tf.clip_by_value(y, 1e-8, 1.0))
 Now, try training again with `--debug`:
 
 ```none
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_mnist.py --debug
+python -m tensorflow.python.debug.examples.debug_mnist --debug
 ```
 
 Enter `run -f has_inf_or_nan` at the `tfdbg>` prompt and confirm that no tensors
@@ -262,38 +264,12 @@ stuck. Success!
 
 ## Debugging tf-learn Estimators
 
-In the tutorial above, we described how to use `tfdbg` if you are managing your
-own [`tf.Session`](https://tensorflow.org/api_docs/python/client.html#Session)
-objects. However, many users find
-[`tf.contrib.learn`](https://tensorflow.org/tutorials/tflearn/index.html)
-`Estimator`s to be a convenient higher level API for creating and using models
-in TensorFlow. Part of the convenience is that `Estimator`s manage Sessions
-internally. Fortunately, you can still use `tfdbg` with `Estimator`s by adding a
-special hook.
+For documentation on **tfdbg** to debug
+[tf.contrib.learn](https://tensorflow.org/tutorials/tflearn/index.html)
+`Estimator`s and `Experiment`s, please see
+[How to Use TensorFlow Debugger (tfdbg) with tf.contrib.learn](tfdbg-tflearn.md).
 
-Currently, `tfdbg` can only debug the `fit()` method of tf-learn
-`Estimator`s. Support for debugging `evaluate()` will come soon. To debug
-`Estimator.fit()`, create a monitor and supply it as an argument. For example:
-
-```python
-from tensorflow.python import debug as tf_debug
-
-# Create a local CLI debug hook and use it as a monitor when calling fit().
-classifier.fit(x=training_set.data,
-               y=training_set.target,
-               steps=1000,
-               monitors=[tf_debug.LocalCLIDebugHook()])
-```
-
-For a detailed [example](https://www.tensorflow.org/code/tensorflow/python/debug/examples/debug_tflearn_iris.py) based on
-[tf-learn's iris tutorial](../../../g3doc/tutorials/tflearn/index.md),
-run:
-
-```none
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_tflearn_iris.py --debug
-```
-
-## Offline Debugging of Remotely-running Sessions
+## Offline Debugging of Remotely-Running Sessions
 
 Oftentimes, your model is running in a remote machine or process that you don't
 have terminal access to. To perform model debugging in such cases, you can use
@@ -326,9 +302,27 @@ inspect the data in the dump directory on the shared storage by using the
 `offline_analyzer` of `tfdbg`. For example:
 
 ```none
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/cli/offline_analyzer.py \
+python -m tensorflow.python.debug.cli.offline_analyzer \
     --dump_dir=/cns/is-d/home/somebody/tfdbg_dumps_1
 ```
+
+The `Session` wrapper `DumpingDebugWrapperSession` offers an easier and more
+flexible way to generate dumps on filesystem that can be analyzed offline.
+To use it, simply do:
+
+```python
+# Let your BUILD target depend on "//tensorflow/python/debug:debug_py
+from tensorflow.python.debug import debug_utils
+
+sess = tf_debug.DumpingDebugWrapperSession(
+    sess, "/cns/is-d/home/somebody/tfdbg_dumps_1/", watch_fn=my_watch_fn)
+```
+
+`watch_fn=my_watch_fn` is a `Callable` that allows you to configure what
+`Tensor`s to watch on different `Session.run()` calls, as a function of the
+`fetches` and `feed_dict` to the `run()` call and other states. See
+[the API doc of DumpingDebugWrapperSession](../../api_docs/python/tf_debug.md#DumpingDebugWrapperSession.__init__)
+for more details.
 
 If you model code is written in C++ or other languages, you can also
 modify the `debug_options` field of `RunOptions` to generate debug dumps that
@@ -383,11 +377,11 @@ sess = tf_debug.LocalCLIDebugWrapperSession(sess)
 
 ```none
 # Debugging shape mismatch during matrix multiplication.
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_errors.py \
+python -m tensorflow.python.debug.examples.debug_errors \
     --error shape_mismatch --debug
 
 # Debugging uninitialized variable.
-python $(python -c "import tensorflow as tf; import os; print(os.path.dirname(tf.__file__));")/python/debug/examples/debug_errors.py \
+python -m tensorflow.python.debug.examples.debug_errors \
     --error uninitialized_variable --debug
 ```
 

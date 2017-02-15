@@ -61,7 +61,7 @@ class BasicRNNCell(RNNCell):
     """Most basic RNN: output = new_state = act(W * input + U * state + B)."""
     with vs.variable_scope(scope or "basic_rnn_cell"):
       output = self._activation(
-          _linear([inputs, state], self._num_units, True, scope=scope))
+          _linear([inputs, state], self._num_units, True))
     return output, output
 
 
@@ -89,14 +89,13 @@ class GRUCell(RNNCell):
         # We start with bias of 1.0 to not reset and not update.
         r, u = array_ops.split(
             value=_linear(
-                [inputs, state], 2 * self._num_units, True, 1.0, scope=scope),
+                [inputs, state], 2 * self._num_units, True, 1.0),
             num_or_size_splits=2,
             axis=1)
         r, u = sigmoid(r), sigmoid(u)
       with vs.variable_scope("candidate"):
         c = self._activation(_linear([inputs, r * state],
-                                     self._num_units, True,
-                                     scope=scope))
+                                     self._num_units, True))
       new_h = u * state + (1 - u) * c
     return new_h, new_h
 
@@ -176,7 +175,7 @@ class BasicLSTMCell(RNNCell):
         c, h = state
       else:
         c, h = array_ops.split(value=state, num_or_size_splits=2, axis=1)
-      concat = _linear([inputs, h], 4 * self._num_units, True, scope=scope)
+      concat = _linear([inputs, h], 4 * self._num_units, True)
 
       # i = input_gate, j = new_input, f = forget_gate, o = output_gate
       i, j, f, o = array_ops.split(value=concat, num_or_size_splits=4, axis=1)
@@ -188,7 +187,7 @@ class BasicLSTMCell(RNNCell):
       if self._state_is_tuple:
         new_state = LSTMStateTuple(new_c, new_h)
       else:
-        new_state = array_ops.concat_v2([new_c, new_h], 1)
+        new_state = array_ops.concat([new_c, new_h], 1)
       return new_h, new_state
 
 
@@ -334,11 +333,9 @@ class LSTMCell(RNNCell):
             partitioned_variables.fixed_size_partitioner(
                 self._num_unit_shards))
       # i = input_gate, j = new_input, f = forget_gate, o = output_gate
-      lstm_matrix = _linear([inputs, m_prev], 4 * self._num_units, bias=True,
-                            scope=scope)
+      lstm_matrix = _linear([inputs, m_prev], 4 * self._num_units, bias=True)
       i, j, f, o = array_ops.split(
           value=lstm_matrix, num_or_size_splits=4, axis=1)
-
       # Diagonal connections
       if self._use_peepholes:
         with vs.variable_scope(unit_scope) as projection_scope:
@@ -362,7 +359,6 @@ class LSTMCell(RNNCell):
         # pylint: disable=invalid-unary-operand-type
         c = clip_ops.clip_by_value(c, -self._cell_clip, self._cell_clip)
         # pylint: enable=invalid-unary-operand-type
-
       if self._use_peepholes:
         m = sigmoid(o + w_o_diag * c) * self._activation(c)
       else:
@@ -374,7 +370,7 @@ class LSTMCell(RNNCell):
             proj_scope.set_partitioner(
                 partitioned_variables.fixed_size_partitioner(
                     self._num_proj_shards))
-          m = _linear(m, self._num_proj, bias=False, scope=scope)
+          m = _linear(m, self._num_proj, bias=False)
 
         if self._proj_clip is not None:
           # pylint: disable=invalid-unary-operand-type
@@ -382,7 +378,7 @@ class LSTMCell(RNNCell):
           # pylint: enable=invalid-unary-operand-type
 
     new_state = (LSTMStateTuple(c, m) if self._state_is_tuple else
-                 array_ops.concat_v2([c, m], 1))
+                 array_ops.concat([c, m], 1))
     return m, new_state
 
 
@@ -426,7 +422,7 @@ class OutputProjectionWrapper(RNNCell):
     output, res_state = self._cell(inputs, state)
     # Default scope: "OutputProjectionWrapper"
     with vs.variable_scope(scope or "output_projection_wrapper"):
-      projected = _linear(output, self._output_size, True, scope=scope)
+      projected = _linear(output, self._output_size, True)
     return projected, res_state
 
 
@@ -468,7 +464,7 @@ class InputProjectionWrapper(RNNCell):
     """Run the input projection and then the cell."""
     # Default scope: "InputProjectionWrapper"
     with vs.variable_scope(scope or "input_projection_wrapper"):
-      projected = _linear(inputs, self._num_proj, True, scope=scope)
+      projected = _linear(inputs, self._num_proj, True)
     return self._cell(projected, state)
 
 
@@ -526,6 +522,72 @@ class DropoutWrapper(RNNCell):
         self._output_keep_prob < 1):
       output = nn_ops.dropout(output, self._output_keep_prob, seed=self._seed)
     return output, new_state
+
+
+class ResidualWrapper(RNNCell):
+  """RNNCell wrapper that ensures cell inputs are added to the outputs."""
+
+  def __init__(self, cell):
+    """Constructs a `ResidualWrapper` for `cell`.
+
+    Args:
+      cell: An instance of `RNNCell`.
+    """
+    self._cell = cell
+
+  @property
+  def state_size(self):
+    return self._cell.state_size
+
+  @property
+  def output_size(self):
+    return self._cell.output_size
+
+  def __call__(self, inputs, state, scope=None):
+    """Run the cell and add its inputs to its outputs.
+
+    Args:
+      inputs: cell inputs.
+      state: cell state.
+      scope: optional cell scope.
+
+    Returns:
+      Tuple of cell outputs and new state.
+
+    Raises:
+      TypeError: If cell inputs and outputs have different structure (type).
+      ValueError: If cell inputs and outputs have different structure (value).
+    """
+    outputs, new_state = self._cell(inputs, state, scope=scope)
+    nest.assert_same_structure(inputs, outputs)
+    # Ensure shapes match
+    def assert_shape_match(inp, out):
+      inp.get_shape().assert_is_compatible_with(out.get_shape())
+    nest.map_structure(assert_shape_match, inputs, outputs)
+    res_outputs = nest.map_structure(
+        lambda inp, out: inp + out, inputs, outputs)
+    return (res_outputs, new_state)
+
+
+class DeviceWrapper(RNNCell):
+  """Operator that ensures an RNNCell runs on a particular device."""
+
+  def __init__(self, cell, device):
+    """Construct a `DeviceWrapper` for `cell` with device `device`.
+
+    Ensures the wrapped `cell` is called with `tf.device(device)`.
+
+    Args:
+      cell: An instance of `RNNCell`.
+      device: A device string or function, for passing to `tf.device`.
+    """
+    self._cell = cell
+    self._device = device
+
+  def __call__(self, inputs, state, scope=None):
+    """Run the cell on specified device."""
+    with ops.device(self._device):
+      return self._cell(inputs, state, scope=scope)
 
 
 class EmbeddingWrapper(RNNCell):
@@ -615,6 +677,10 @@ class MultiRNNCell(RNNCell):
     """
     if not cells:
       raise ValueError("Must specify at least one cell for MultiRNNCell.")
+    if not nest.is_sequence(cells):
+      raise TypeError(
+          "cells must be a list or tuple, but saw: %s." % cells)
+
     self._cells = cells
     self._state_is_tuple = state_is_tuple
     if not state_is_tuple:
@@ -655,7 +721,7 @@ class MultiRNNCell(RNNCell):
           cur_inp, new_state = cell(cur_inp, cur_state)
           new_states.append(new_state)
     new_states = (tuple(new_states) if self._state_is_tuple else
-                  array_ops.concat_v2(new_states, 1))
+                  array_ops.concat(new_states, 1))
     return cur_inp, new_states
 
 
@@ -704,7 +770,7 @@ class _SlimRNNCell(RNNCell):
     return output, state
 
 
-def _linear(args, output_size, bias, bias_start=0.0, scope=None):
+def _linear(args, output_size, bias, bias_start=0.0):
   """Linear map: sum_i(args[i] * W[i]), where W[i] is a variable.
 
   Args:
@@ -712,7 +778,6 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None):
     output_size: int, second dimension of W[i].
     bias: boolean, whether to add a bias term or not.
     bias_start: starting value to initialize the bias; 0 by default.
-    scope: (optional) Variable scope to create parameters in.
 
   Returns:
     A 2D Tensor with shape [batch x output_size] equal to
@@ -748,7 +813,7 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None):
     if len(args) == 1:
       res = math_ops.matmul(args[0], weights)
     else:
-      res = math_ops.matmul(array_ops.concat_v2(args, 1), weights)
+      res = math_ops.matmul(array_ops.concat(args, 1), weights)
     if not bias:
       return res
     with vs.variable_scope(outer_scope) as inner_scope:
@@ -757,4 +822,4 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None):
           "biases", [output_size],
           dtype=dtype,
           initializer=init_ops.constant_initializer(bias_start, dtype=dtype))
-  return nn_ops.bias_add(res, biases)
+    return nn_ops.bias_add(res, biases)

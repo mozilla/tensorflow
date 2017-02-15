@@ -25,11 +25,11 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
-from tensorflow.python.debug import debug_data
-from tensorflow.python.debug import debug_utils
 from tensorflow.python.debug.cli import analyzer_cli
 from tensorflow.python.debug.cli import command_parser
 from tensorflow.python.debug.cli import debugger_cli_common
+from tensorflow.python.debug.lib import debug_data
+from tensorflow.python.debug.lib import debug_utils
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import control_flow_ops
@@ -1608,7 +1608,8 @@ class AnalyzerCLIWhileLoopTest(test_util.TensorFlowTestCase):
       self.assertEqual("  dtype: int32", output.lines[1])
       self.assertEqual("  shape: ()", output.lines[2])
       self.assertEqual("", output.lines[3])
-      self.assertEqual("array(%d, dtype=int32)" % i, output.lines[4])
+      self.assertTrue(output.lines[4].startswith("array(%d" % i))
+      self.assertTrue(output.lines[4].endswith(")"))
 
   def testMultipleDumpsPrintTensorInvalidNumber(self):
     output = self._registry.dispatch_command("pt",

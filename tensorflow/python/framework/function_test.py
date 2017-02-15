@@ -644,6 +644,24 @@ class FunctionTest(test.TestCase):
       self.assertAllEqual(v0, 20.)
       self.assertAllEqual(v1, 20.)
 
+  def testShapeFunction(self):
+    @function.Defun(dtypes.float32,
+                    shape_func=lambda op: [op.inputs[0].get_shape()])
+    def Foo(x):
+      return x + 1.0
+
+    @function.Defun(
+        shape_func=lambda op: [[1] + op.inputs[0].get_shape().as_list()])
+    def Bar(x):
+      return array_ops.stack([x])
+
+    g = ops.Graph()
+    with g.as_default():
+      x = Foo([1.0, 2.0])
+      self.assertEqual(x.get_shape().as_list(), [2])
+      y = Bar(array_ops.zeros([1, 2, 3]))
+      self.assertAllEqual(y.get_shape().as_list(), [1, 1, 2, 3])
+
 
 class FunctionOverloadTest(test.TestCase):
 
@@ -713,7 +731,7 @@ class UnrollLSTMTest(test.TestCase):
   # Helper to construct a LSTM cell graph.
   @classmethod
   def LSTMCell(cls, x, mprev, cprev, weights):
-    xm = array_ops.concat_v2([x, mprev], 1)
+    xm = array_ops.concat([x, mprev], 1)
     i_i, i_g, f_g, o_g = array_ops.split(
         value=math_ops.matmul(xm, weights), num_or_size_splits=4, axis=1)
     new_c = math_ops.sigmoid(f_g) * cprev + math_ops.sigmoid(
@@ -914,14 +932,16 @@ class ModuleFunctionTest(test.TestCase):
 
 class VariableHoistingTest(test.TestCase):
 
-  def _testSimpleModel(self, use_forward_func):
+  def _testSimpleModel(self, use_forward_func, use_resource=False):
 
     def _Model(x):
       w = variable_scope.get_variable(
           "w", (64, 64),
-          initializer=init_ops.random_uniform_initializer(seed=312))
+          initializer=init_ops.random_uniform_initializer(seed=312),
+          use_resource=use_resource)
       b = variable_scope.get_variable(
-          "b", (64), initializer=init_ops.zeros_initializer()),
+          "b", (64), initializer=init_ops.zeros_initializer(),
+          use_resource=use_resource),
       return math_ops.sigmoid(math_ops.matmul(x, w) + b)
 
     @function.Defun()
@@ -975,6 +995,9 @@ class VariableHoistingTest(test.TestCase):
     self._testSimpleModel(True)
     self._testSimpleModel(False)
 
+  def testBasicResource(self):
+    self._testSimpleModel(True, use_resource=True)
+    self._testSimpleModel(False, use_resource=True)
 
 if __name__ == "__main__":
   test.main()
