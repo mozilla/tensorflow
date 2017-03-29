@@ -34,7 +34,7 @@ tasks:
       artifacts:
         "public":
           type: "directory"
-          path: "/tmp/tensorflow_pkg/"
+          path: "/tmp/artifacts/"
           expires: "{{ '7 days' | $fromNow }}"
     # Each task also requires explicit metadata
     metadata:
@@ -74,7 +74,7 @@ tasks:
       artifacts:
         "public":
           type: "directory"
-          path: "/tmp/tensorflow_pkg/"
+          path: "/tmp/artifacts/"
           expires: "{{ '6 months' | $fromNow }}"
     # Each task also requires explicit metadata
     metadata:
@@ -104,7 +104,7 @@ tasks:
       artifacts:
         "public":
           type: "directory"
-          path: "/tmp/tensorflow_pkg/"
+          path: "/tmp/artifacts/"
           expires: "{{ '7 days' | $fromNow }}"
     # Each task also requires explicit metadata
     metadata:
@@ -138,7 +138,7 @@ tasks:
       artifacts:
         "public":
           type: "directory"
-          path: "/tmp/tensorflow_pkg/"
+          path: "/tmp/artifacts/"
           expires: "{{ '6 months' | $fromNow }}"
     # Each task also requires explicit metadata
     metadata:
