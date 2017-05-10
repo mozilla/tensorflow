@@ -51,11 +51,10 @@ new_http_archive(
 new_http_archive(
   name = "GccArmRpi",
   build_file = "compilers/gcc_arm_rpi.BUILD",
-  strip_prefix = "tools-master/",
+  strip_prefix = "tools-0e906ebc527eab1cdbf7adabff5b474da9562e9f/",
   # Prefer tar over ZIP, bazel complains about "Zip entries cannot refer to files outside of their directory: raspberry-tools-master.zip has a symlink to ../../lib/libBrokenLocale.so.1"
-  # url = "http://127.0.0.1:8000/raspberry-tools-master.tar.gz",
-  url = "https://github.com/raspberrypi/tools/archive/master.tar.gz",
-  sha256 = "e34386e82819ac4c03ebcc4feddaa08e523cd562149379118270d99c1601d465"
+  url = "https://github.com/raspberrypi/tools/archive/0e906ebc527eab1cdbf7adabff5b474da9562e9f.tar.gz",
+  sha256 = "970285762565c7890c6c087d262b0a18286e7d0384f13a37786d8521773bc969"
 )
 
 new_http_archive(
