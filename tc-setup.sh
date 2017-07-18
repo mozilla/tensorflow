@@ -53,7 +53,7 @@ if [ ! -z "${install_cuda}" ]; then
     LD_LIBRARY_PATH=${HOME_CLEAN}/DeepSpeech/CUDA/lib64/:$LD_LIBRARY_PATH
     export LD_LIBRARY_PATH
 
-    ls -halR ~/DeepSpeech/CUDA/lib64/
+    ls -halR ~/DeepSpeech/CUDA/
 else
     echo "No CUDA/CuDNN to install"
 fi
