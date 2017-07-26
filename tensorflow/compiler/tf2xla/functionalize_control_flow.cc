@@ -388,17 +388,21 @@ Status FunctionalizeLoop(Graph* graph, Frame* frame,
 
       // Find the Exit successor of the Switch.
       for (const Edge* edge : arg.switch_node->out_edges()) {
-        if (edge->src_output() == 0 && IsExit(edge->dst())) {
-          if (arg.exit != nullptr) {
+	fprintf(stderr, "arg.switch_node=%s edge->dst()=%s\n", arg.switch_node->name().c_str(), edge->dst()->name().c_str());
+	fprintf(stderr, "edge->src_output()=%d\n", edge->src_output());
+	fprintf(stderr, "IsExit(edge->dst())=%d IsIdentity(edge->dst())=%d\n", IsExit(edge->dst()), IsIdentity(edge->dst()));
+        if ((edge->src_output() == 0 && IsExit(edge->dst())) /* || IsIdentity(edge->dst()) */ ) {
+          if (arg.exit != nullptr /* && !IsExit(arg.exit) */) {
+	    fprintf(stderr, "arg.exit=%p arg.exit->name()=%s IsExit(arg.exit)=%d\n", arg.exit, arg.exit->name().c_str(), IsExit(arg.exit));
             return errors::InvalidArgument("Duplicate Exit successors to ",
-                                           arg.switch_node->name());
+                                           arg.switch_node->name(), " because ", arg.exit->name());
           }
           arg.exit = edge->dst();
         }
       }
       if (arg.exit == nullptr) {
-        return errors::InvalidArgument("Missing Exit successor to ",
-                                       arg.switch_node->name());
+        /* return errors::InvalidArgument("Missing Exit successor to ",
+                                       arg.switch_node->name()); */
       }
     }
   }
@@ -468,7 +472,7 @@ Status FunctionalizeLoop(Graph* graph, Frame* frame,
       graph->AddEdge(in_edge->src(), in_edge->src_output(), while_node, i);
     }
 
-    if (!arg.is_loop_invariant) {
+    if (arg.exit != nullptr && !arg.is_loop_invariant) {
       std::vector<const Edge*> edges(arg.exit->out_edges().begin(),
                                      arg.exit->out_edges().end());
       for (const Edge* edge : edges) {
