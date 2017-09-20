@@ -6,3 +6,5 @@ taskcluster:
   generic:
     provisionerId: localprovisioner
     workerType: deepspeech-macos
+    # provisionerId: deepspeech-provisioner
+    # workerType: deepspeech-macos-heavy
