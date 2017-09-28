@@ -1,4 +1,4 @@
-# Using the `Dataset` API for TensorFlow Input Pipelines
+# Importing Data
 
 The `Dataset` API enables you to build complex input pipelines from
 simple, reusable pieces. For example, the pipeline for an image model might
@@ -120,9 +120,9 @@ dataset3 = dataset3.filter(lambda x, (y, z): ...)
 
 ### Creating an iterator
 
-One you have built a `Dataset` to represent your input data, the next step is to
+Once you have built a `Dataset` to represent your input data, the next step is to
 create an `Iterator` to access elements from that dataset.  The `Dataset` API
-currently supports three kinds of iterator, in increasing level of
+currently supports the following iterators, in increasing level of
 sophistication:
 
 * **one-shot**,
@@ -145,6 +145,9 @@ for i in range(100):
   value = sess.run(next_element)
   assert i == value
 ```
+
+Note: Currently, one-shot iterators are the only type that is easily usable
+with an `Estimator`.
 
 An **initializable** iterator requires you to run an explicit
 `iterator.initializer` operation before using it. In exchange for this
@@ -452,6 +455,9 @@ dataset = dataset.flat_map(
         .filter(lambda line: tf.not_equal(tf.substr(line, 0, 1), "#"))))
 ```
 
+For a full example of parsing a CSV file using datasets, see [`imports85.py`](https://www.tensorflow.org/code/tensorflow/examples/get_started/regression/imports85.py)
+in @{$get_started/linear_regression}.
+
 <!--
 TODO(mrry): Add these sections.
 
@@ -548,8 +554,8 @@ labels = [0, 37, 29, 1, ...]
 
 dataset = tf.contrib.data.Dataset.from_tensor_slices((filenames, labels))
 dataset = dataset.map(
-    lambda filename, label: tf.py_func(
-        _read_py_function, [filename, label], [tf.uint8, label.dtype]))
+    lambda filename, label: tuple(tf.py_func(
+        _read_py_function, [filename, label], [tf.uint8, label.dtype])))
 dataset = dataset.map(_resize_function)
 ```
 
@@ -735,7 +741,7 @@ def dataset_input_fn():
 
     return {"image_data": image, "date_time": parsed["date_time"]}, label
 
-  # Use `Dataset.map()` to build a pair of a feature dictionary and a label 
+  # Use `Dataset.map()` to build a pair of a feature dictionary and a label
   # tensor for each example.
   dataset = dataset.map(parser)
   dataset = dataset.shuffle(buffer_size=10000)
