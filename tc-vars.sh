@@ -12,8 +12,10 @@ if [ "${OS}" = "Linux" ]; then
     CUDA_URL=https://developer.nvidia.com/compute/cuda/8.0/prod/local_installers/cuda_8.0.44_linux-run
     CUDA_SHA256=64dc4ab867261a0d690735c46d7cc9fc60d989da0d69dc04d1714e409cacbdf0
 
-    CUDNN_URL=http://developer.download.nvidia.com/compute/redist/cudnn/v5.1/cudnn-8.0-linux-x64-v5.1.tgz
-    CUDNN_SHA256=c10719b36f2dd6e9ddc63e3189affaa1a94d7d027e63b71c3f64d449ab0645ce
+    # From https://gitlab.com/nvidia/cuda/blob/centos7/8.0/devel/cudnn7/Dockerfile
+    CUDNN_URL=http://developer.download.nvidia.com/compute/redist/cudnn/v7.0.2/cudnn-8.0-linux-x64-v7.tgz
+    CUDNN_SHA256=b667807f2b82af7a9ed5451e9ff5ea7a11deeef85aafdc5529e1adfddcc069ca
+
 elif [ "${OS}" = "Darwin" ]; then
     if [ -z "${TASKCLUSTER_TASK_DIR}" -o -z "${TASKCLUSTER_ARTIFACTS}" ]; then
         echo "Inconsistent OSX setup: missing some vars."
