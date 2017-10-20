@@ -58,9 +58,9 @@ class EstimatorSpec(
         'export_outputs', 'training_chief_hooks', 'training_hooks',
         'scaffold', 'evaluation_hooks'
     ])):
-  """Ops and objects returned from a `model_fn` and passed to `Estimator`.
+  """Ops and objects returned from a `model_fn` and passed to an `Estimator`.
 
-  `EstimatorSpec` fully defines the model to be run by `Estimator`.
+  `EstimatorSpec` fully defines the model to be run by an `Estimator`.
   """
 
   def __new__(cls,
@@ -82,8 +82,8 @@ class EstimatorSpec(
     * For `mode == ModeKeys.PREDICT`: required fields are `predictions`.
 
     model_fn can populate all arguments independent of mode. In this case, some
-    arguments will be ignored by `Estimator`. E.g. `train_op` will be ignored
-    in eval and infer modes. Example:
+    arguments will be ignored by an `Estimator`. E.g. `train_op` will be
+    ignored in eval and infer modes. Example:
 
     ```python
     def my_model_fn(mode, features, labels):
@@ -131,7 +131,10 @@ class EstimatorSpec(
       train_op: Op for the training step.
       eval_metric_ops: Dict of metric results keyed by name. The values of the
         dict are the results of calling a metric function, namely a
-        `(metric_tensor, update_op)` tuple.
+        `(metric_tensor, update_op)` tuple. `metric_tensor` should be evaluated
+        without any impact on state (typically is a pure computation results
+        based on variables.). For example, it should not trigger the `update_op`
+        or requires any input fetching.
       export_outputs: Describes the output signatures to be exported to
         `SavedModel` and used during serving.
         A dict `{name: output}` where:

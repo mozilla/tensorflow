@@ -12,13 +12,25 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/python:array_ops",
+        "//tensorflow/python:constant_op",
         "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:dtypes",
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:math_ops",
         "//tensorflow/python:spectral_ops",
+        "//tensorflow/python:tensor_util",
         "//tensorflow/python:util",
         "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_tests(
+    name = "mel_ops_test",
+    srcs = ["python/kernel_tests/mel_ops_test.py"],
+    additional_deps = [
+        ":signal_py",
+        "//third_party/py/numpy",
+        "//tensorflow/python:client_testlib",
     ],
 )
 
@@ -73,11 +85,11 @@ cuda_py_tests(
         "//tensorflow/python:platform_test",
         "//tensorflow/python:spectral_ops_test_util",
     ],
+    tags = ["nomac"],
 )
 
 cuda_py_tests(
     name = "window_ops_test",
-    size = "small",
     srcs = ["python/kernel_tests/window_ops_test.py"],
     additional_deps = [
         ":signal_py",

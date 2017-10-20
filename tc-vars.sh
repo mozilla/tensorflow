@@ -6,14 +6,16 @@ export OS=$(uname)
 if [ "${OS}" = "Linux" ]; then
     export DS_ROOT_TASK=$(/usr/bin/realpath "${HOME}")
 
-    BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.5.2/bazel-0.5.2-installer-linux-x86_64.sh
-    BAZEL_SHA256=88e3d0663540ed8de68a828169cccbcd56c87791371adb8e8e30e81c05f68a98
+    BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.5.4/bazel-0.5.4-installer-linux-x86_64.sh
+    BAZEL_SHA256=9981da210d2d96e68662127ba9d96844ce2822524b18e98fcec54a70345cff9c
 
     CUDA_URL=https://developer.nvidia.com/compute/cuda/8.0/prod/local_installers/cuda_8.0.44_linux-run
     CUDA_SHA256=64dc4ab867261a0d690735c46d7cc9fc60d989da0d69dc04d1714e409cacbdf0
 
-    CUDNN_URL=http://developer.download.nvidia.com/compute/redist/cudnn/v5.1/cudnn-8.0-linux-x64-v5.1.tgz
-    CUDNN_SHA256=c10719b36f2dd6e9ddc63e3189affaa1a94d7d027e63b71c3f64d449ab0645ce
+    # From https://gitlab.com/nvidia/cuda/blob/centos7/8.0/devel/cudnn7/Dockerfile
+    CUDNN_URL=http://developer.download.nvidia.com/compute/redist/cudnn/v7.0.2/cudnn-8.0-linux-x64-v7.tgz
+    CUDNN_SHA256=b667807f2b82af7a9ed5451e9ff5ea7a11deeef85aafdc5529e1adfddcc069ca
+
 elif [ "${OS}" = "Darwin" ]; then
     if [ -z "${TASKCLUSTER_TASK_DIR}" -o -z "${TASKCLUSTER_ARTIFACTS}" ]; then
         echo "Inconsistent OSX setup: missing some vars."
@@ -24,8 +26,8 @@ elif [ "${OS}" = "Darwin" ]; then
 
     export DS_ROOT_TASK=${TASKCLUSTER_TASK_DIR}
 
-    BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.5.2/bazel-0.5.2-installer-darwin-x86_64.sh
-    BAZEL_SHA256=c31a38761b7b21eadccc757774198bc307353cab07c3c496b386f249de2a33dc
+    BAZEL_URL=https://github.com/bazelbuild/bazel/releases/download/0.5.4/bazel-0.5.4-installer-darwin-x86_64.sh
+    BAZEL_SHA256=1a83525f2da8816192d22e334d5cfe396cb00c36057922c8c3a39fc9dbbe2b0f
 fi;
 
 # /tmp/artifacts for docker-worker on linux,

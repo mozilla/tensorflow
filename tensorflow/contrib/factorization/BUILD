@@ -162,6 +162,7 @@ tf_py_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python:variables",
     ],
+    tags = ["notsan"],  # b/62863147
 )
 
 py_library(
@@ -200,7 +201,7 @@ tf_py_test(
 # Estimators tests
 tf_py_test(
     name = "wals_test",
-    size = "medium",
+    size = "large",
     srcs = ["python/ops/wals_test.py"],
     additional_deps = [
         ":factorization_py",
@@ -220,6 +221,7 @@ tf_py_test(
         "manual",
         "noasan",  # times out b/63678675
         "nomsan",
+        "notsan",
     ],
 )
 

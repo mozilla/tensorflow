@@ -82,12 +82,6 @@ StatusOr<std::unique_ptr<GlobalData>> ClientLibraryTestBase::Execute(
   return client_->Execute(computation, arguments, &execution_options_);
 }
 
-StatusOr<ExecutionHandle> ClientLibraryTestBase::ExecuteAsync(
-    const Computation& computation,
-    tensorflow::gtl::ArraySlice<GlobalData*> arguments) {
-  return client_->ExecuteAsync(computation, arguments, &execution_options_);
-}
-
 StatusOr<std::unique_ptr<Literal>> ClientLibraryTestBase::ExecuteAndTransfer(
     const Computation& computation,
     tensorflow::gtl::ArraySlice<GlobalData*> arguments,
@@ -264,7 +258,8 @@ tensorflow::Status ClientLibraryTestBase::ComputeAndCompareLiteralWithStatus(
     LOG(WARNING) << "performing exact comparison of floating point numbers";
   } else {
     TF_RET_CHECK(ShapeUtil::ElementIsIntegral(expected.shape()) ||
-                 expected.shape().element_type() == PRED);
+                 expected.shape().element_type() == PRED)
+        << ShapeUtil::HumanString(expected.shape());
   }
   auto expect_equal = [&](const Literal& actual, const string& error_message) {
     LiteralTestUtil::ExpectEqual(expected, actual, error_message);
