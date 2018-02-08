@@ -32,6 +32,7 @@ from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.util.tf_export import tf_export
 
 
 __all__ = [
@@ -111,6 +112,7 @@ class _Mapping(collections.namedtuple(
 
 
 @six.add_metaclass(abc.ABCMeta)
+@tf_export("distributions.bijectors.Bijector")
 class Bijector(object):
   """Interface for transformations of a `Distribution` sample.
 
@@ -158,7 +160,7 @@ class Bijector(object):
   # Evaluate forward transformation.
   fwd_x = my_bijector.forward(x)
   x == my_bijector.inverse(fwd_x)
-  x != my_bijector.forward(fwd_x)  # Not equal because g(x) != g(g(x)).
+  x != my_bijector.forward(fwd_x)  # Not equal because x != g(g(x)).
   ```
 
   - Computing a log-likelihood:
@@ -275,7 +277,7 @@ class Bijector(object):
       implies `g^{-1}` is differentiable in the image of `g`.
       Applying the chain rule to `y = g(x) = g(g^{-1}(y))` yields
       `I = g'(g^{-1}(y))*g^{-1}'(y)`.
-      The same theorem also implies `g{-1}'` is non-singular therefore:
+      The same theorem also implies `g^{-1}'` is non-singular therefore:
       `inv[ g'(g^{-1}(y)) ] = g^{-1}'(y)`.
       The claim follows from [properties of determinant](
   https://en.wikipedia.org/wiki/Determinant#Multiplicativity_and_matrix_groups).

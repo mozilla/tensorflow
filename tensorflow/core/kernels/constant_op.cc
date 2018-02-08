@@ -54,7 +54,12 @@ ConstantOp::ConstantOp(OpKernelConstruction* ctx)
                               DataTypeString(ctx->output_type(0)), ")"));
 }
 
-void ConstantOp::Compute(OpKernelContext* ctx) { ctx->set_output(0, tensor_); }
+void ConstantOp::Compute(OpKernelContext* ctx) {
+  ctx->set_output(0, tensor_);
+  if (TF_PREDICT_FALSE(ctx->track_allocations())) {
+    ctx->record_persistent_memory_allocation(tensor_.AllocatedBytes());
+  }
+}
 
 ConstantOp::~ConstantOp() {}
 
@@ -141,38 +146,24 @@ typedef Eigen::GpuDevice GPUDevice;
 typedef Eigen::SyclDevice SYCLDevice;
 #endif  // TENSORFLOW_USE_SYCL
 
-namespace functor {
-
-// Partial specialization of FillFunctor<Device=CPUDevice, T>.
-template <typename T>
-struct FillFunctor<CPUDevice, T> {
-  void operator()(const CPUDevice& d, typename TTypes<T>::Flat out,
-                  typename TTypes<T>::ConstScalar in) {
-    out.device(d) = out.constant(in());
-  }
-};
-
-}  // end namespace functor
-
-template <typename Device, typename T>
+template <typename Device, typename T, typename Index>
 class FillOp : public OpKernel {
  public:
   explicit FillOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
     const Tensor& Tdims = context->input(0);
-    OP_REQUIRES(
-        context, IsLegacyVector(Tdims.shape()),
-        errors::InvalidArgument("dims must be a vector of int32, got shape ",
-                                Tdims.shape().DebugString()));
+    OP_REQUIRES(context, IsLegacyVector(Tdims.shape()),
+                errors::InvalidArgument("dims must be a vector, got shape ",
+                                        Tdims.shape().DebugString()));
     const Tensor& Tvalue = context->input(1);
     OP_REQUIRES(context, IsLegacyScalar(Tvalue.shape()),
                 errors::InvalidArgument("value must be a scalar, got shape ",
                                         Tvalue.shape().DebugString()));
-    auto dims = Tdims.flat<int32>();
+    auto dims = Tdims.flat<Index>();
     TensorShape shape;
     OP_REQUIRES_OK(context, TensorShapeUtils::MakeShape(
-                                reinterpret_cast<const int32*>(dims.data()),
+                                reinterpret_cast<const Index*>(dims.data()),
                                 dims.size(), &shape));
     Tensor* out = nullptr;
     OP_REQUIRES_OK(context, context->allocate_output(0, shape, &out));
@@ -182,34 +173,19 @@ class FillOp : public OpKernel {
   }
 };
 
-#ifdef TENSORFLOW_USE_SYCL
-
-namespace functor {
-// Partial specialization of FillFunctor<Device=SYCLDevice, T>.
-template <typename T>
-struct FillFunctor<SYCLDevice, T> {
-  void operator()(const SYCLDevice& d, typename TTypes<T>::Flat out,
-                  typename TTypes<T>::ConstScalar in) {
-#if !defined(EIGEN_HAS_INDEX_LIST)
-    Eigen::array<int, 1> rank1{1};
-#else
-    Eigen::IndexList<Eigen::type2index<1> > rank1;
-#endif
-    const int size = out.dimension(0);
-    Eigen::array<int, 1> broadcast_dims{size};
-
-    To32Bit(out).device(d) = in.reshape(rank1).broadcast(broadcast_dims);
-  }
-};
-}  // namespace functor
-#endif  // TENSORFLOW_USE_SYCL
-
-#define REGISTER_KERNEL(D, TYPE)                         \
-  REGISTER_KERNEL_BUILDER(Name("Fill")                   \
-                              .Device(DEVICE_##D)        \
-                              .TypeConstraint<TYPE>("T") \
-                              .HostMemory("dims"),       \
-                          FillOp<D##Device, TYPE>);
+#define REGISTER_KERNEL(D, TYPE)                                   \
+  REGISTER_KERNEL_BUILDER(Name("Fill")                             \
+                              .Device(DEVICE_##D)                  \
+                              .TypeConstraint<TYPE>("T")           \
+                              .TypeConstraint<int32>("index_type") \
+                              .HostMemory("dims"),                 \
+                          FillOp<D##Device, TYPE, int32>);         \
+  REGISTER_KERNEL_BUILDER(Name("Fill")                             \
+                              .Device(DEVICE_##D)                  \
+                              .TypeConstraint<TYPE>("T")           \
+                              .TypeConstraint<int64>("index_type") \
+                              .HostMemory("dims"),                 \
+                          FillOp<D##Device, TYPE, int64>);
 
 #define REGISTER_CPU_KERNEL(TYPE) REGISTER_KERNEL(CPU, TYPE)
 TF_CALL_ALL_TYPES(REGISTER_CPU_KERNEL);
@@ -231,15 +207,17 @@ REGISTER_KERNEL(SYCL, int64);
 REGISTER_KERNEL_BUILDER(Name("Fill")
                             .Device(DEVICE_SYCL)
                             .TypeConstraint<int32>("T")
+                            .TypeConstraint<int32>("index_type")
                             .HostMemory("dims")
                             .HostMemory("value")
                             .HostMemory("output"),
-                        FillOp<CPUDevice, int32>);
+                        FillOp<CPUDevice, int32, int32>);
 #undef REGISTER_KERNEL_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
 REGISTER_KERNEL(GPU, Eigen::half);
+REGISTER_KERNEL(GPU, bfloat16);
 REGISTER_KERNEL(GPU, float);
 REGISTER_KERNEL(GPU, double);
 REGISTER_KERNEL(GPU, uint8);
@@ -256,10 +234,11 @@ REGISTER_KERNEL(GPU, bool);
 REGISTER_KERNEL_BUILDER(Name("Fill")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int32>("T")
+                            .TypeConstraint<int32>("index_type")
                             .HostMemory("dims")
                             .HostMemory("value")
                             .HostMemory("output"),
-                        FillOp<CPUDevice, int32>);
+                        FillOp<CPUDevice, int32, int32>);
 #endif
 
 #undef REGISTER_KERNEL
@@ -318,24 +297,18 @@ REGISTER_KERNEL_BUILDER(Name("ZerosLike")
 #if GOOGLE_CUDA
 REGISTER_KERNEL(bool, GPU);
 REGISTER_KERNEL(Eigen::half, GPU);
+REGISTER_KERNEL(bfloat16, GPU);
 REGISTER_KERNEL(float, GPU);
 REGISTER_KERNEL(double, GPU);
 REGISTER_KERNEL(complex64, GPU);
 REGISTER_KERNEL(complex128, GPU);
 REGISTER_KERNEL(int64, GPU);
+REGISTER_KERNEL(Variant, GPU);
 REGISTER_KERNEL_BUILDER(Name("ZerosLike")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int32>("T")
                             .HostMemory("y"),
                         ZerosLikeOp<CPUDevice, int32>);
-// TODO(ebrevdo): Once rendezvous has been properly set up for
-// Variants, we'll no longer need a HostMemory attribute for this case.
-REGISTER_KERNEL_BUILDER(Name("ZerosLike")
-                            .Device(DEVICE_GPU)
-                            .TypeConstraint<Variant>("T")
-                            .HostMemory("x")
-                            .HostMemory("y"),
-                        ZerosLikeOp<GPUDevice, Variant>);
 #endif  // GOOGLE_CUDA
 
 #undef REGISTER_KERNEL
@@ -377,6 +350,7 @@ REGISTER_KERNEL_BUILDER(Name("OnesLike")
 #if GOOGLE_CUDA
 REGISTER_KERNEL(bool, GPU);
 REGISTER_KERNEL(Eigen::half, GPU);
+REGISTER_KERNEL(bfloat16, GPU);
 REGISTER_KERNEL(float, GPU);
 REGISTER_KERNEL(double, GPU);
 REGISTER_KERNEL(complex64, GPU);
