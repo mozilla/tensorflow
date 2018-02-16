@@ -17,6 +17,11 @@ if [ "$1" = "--cuda" ]; then
     install_cuda=yes
 fi
 
+install_ccpp=
+if [ "$1" = "--ccpp" ]; then
+    install_ccpp=yes
+fi;
+
 # $1 url
 # $2 sha256
 download()
@@ -33,6 +38,10 @@ download $BAZEL_URL $BAZEL_SHA256
 if [ ! -z "${install_cuda}" ]; then
     download $CUDA_URL $CUDA_SHA256
     download $CUDNN_URL $CUDNN_SHA256
+fi;
+
+if [ ! -z "${install_ccpp}" ]; then
+    download $COMPUTECPP_URL $COMPUTECPP_SHA256
 fi;
 
 # For debug
@@ -72,9 +81,14 @@ if [ ! -z "${install_cuda}" ]; then
     if [ ! -h "${DS_ROOT_TASK}/DeepSpeech/CUDA/lib64/stubs/libcuda.so.1" ]; then
         ln -s "${DS_ROOT_TASK}/DeepSpeech/CUDA/lib64/stubs/libcuda.so" "${DS_ROOT_TASK}/DeepSpeech/CUDA/lib64/stubs/libcuda.so.1"
     fi;
+fi;
 
-else
-    echo "No CUDA/CuDNN to install"
-fi
+if [ ! -z "${install_ccpp}" ]; then
+    mkdir -p ${DS_ROOT_TASK}/DeepSpeech/ComputeCpp-CE/ || true
+    pushd ${DS_ROOT_TASK}
+        COMPUTECPP_FILE=`basename ${COMPUTECPP_URL}`
+        tar xvf ${DS_ROOT_TASK}/dls/${COMPUTECPP_FILE} --strip-components=1 -C ${DS_ROOT_TASK}/DeepSpeech/ComputeCpp-CE/
+    popd
+fi;
 
 mkdir -p ${TASKCLUSTER_ARTIFACTS} || true

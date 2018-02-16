@@ -1,0 +1,13 @@
+build:
+  template_file: linux-opt-base.tyml
+  routes:
+    - "index.project.deepspeech.tensorflow.pip.${event.head.branch}.ccpp"
+    - "index.project.deepspeech.tensorflow.pip.${event.head.branch}.${event.head.sha}.ccpp"
+    - "index.project.deepspeech.tensorflow.pip.ccpp.${event.head.sha}"
+  maxRunTime: 14400
+  args:
+    tcsetup: "--ccpp"
+    tcbuild: "--ccpp"
+  metadata:
+    name: "TensorFlow Linux AMD64 CCPP"
+    description: "Building TensorFlow for Linux/AMD64, CCPP-enabled, optimized version"
