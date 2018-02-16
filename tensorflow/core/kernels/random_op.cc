@@ -577,7 +577,7 @@ struct FillPhiloxRandomKernel<Distribution, false> {
     const size_t kGroupSize = Distribution::kResultElementCount;
 
     const size_t item_id = item.get_global(0);
-    const size_t total_item_count = item.get_global_range();
+    const size_t total_item_count = item.get_global_range(0);
     size_t offset = item_id * kGroupSize;
     gen_.Skip(item_id);
 
@@ -631,7 +631,7 @@ struct FillPhiloxRandomKernel<Distribution, true> {
         PhiloxRandom::kResultElementCount;
 
     const size_t item_id = item.get_global(0);
-    const size_t total_item_count = item.get_global_range();
+    const size_t total_item_count = item.get_global_range(0);
     size_t group_index = item_id;
     size_t offset = group_index * kGroupSize;
 
@@ -675,7 +675,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
     OpKernelContext* context, const SYCLDevice& device,
     random::PhiloxRandom gen, typename Distribution::ResultElementType* data,
     int64 size, Distribution dist) {
-  const size_t group_size = device.maxSyclThreadsPerBlock();
+  const size_t group_size = device.getNearestPowerOfTwoWorkGroupSize();
   const size_t group_count = (size + group_size - 1) / group_size;
 
   auto buffer = device.get_sycl_buffer(data);
@@ -698,10 +698,17 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
 #define REGISTER(TYPE)                                                         \
   template struct functor::FillPhiloxRandom<                                   \
       SYCLDevice, random::UniformDistribution<random::PhiloxRandom, TYPE>>;    \
+  template struct functor::FillPhiloxRandom<                                   \
+      SYCLDevice, random::NormalDistribution<random::PhiloxRandom, TYPE>>;     \
+  template struct functor::FillPhiloxRandom<                                   \
+      SYCLDevice,                                                              \
+      random::TruncatedNormalDistribution<                                     \
+          random::SingleSampleAdapter<random::PhiloxRandom>, TYPE>>;           \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("RandomUniform")                                                    \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<SYCLDevice, random::UniformDistribution<                  \
                                      random::PhiloxRandom, TYPE>>);            \
@@ -709,6 +716,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
       Name("RandomStandardNormal")                                             \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<SYCLDevice,                                               \
                      random::NormalDistribution<random::PhiloxRandom, TYPE>>); \
@@ -716,6 +724,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
       Name("TruncatedNormal")                                                  \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<                                                          \
           SYCLDevice,                                                          \
@@ -728,11 +737,11 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
                               .HostMemory("shape")              \
                               .HostMemory("minval")             \
                               .HostMemory("maxval")             \
+                              .TypeConstraint<int32>("T")       \
                               .TypeConstraint<IntType>("Tout"), \
                           RandomUniformIntOp<SYCLDevice, IntType>);
 
-TF_CALL_float(REGISTER);
-TF_CALL_double(REGISTER);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
 TF_CALL_int32(REGISTER_INT);
 TF_CALL_int64(REGISTER_INT);
 

@@ -49,8 +49,10 @@ class ZeroDivisionTest(test.TestCase):
             # means 32 bits set, so we allow 0xffffffff as well.  This isn't
             # very portable, so we may need to expand this list if other GPUs
             # do different things.
+
+            # FirePro returns 0x7fffffffffffffff
             self.assertTrue(test.is_gpu_available())
-            self.assertIn(result, (-1, 0xff, 0xffffffff))
+            self.assertIn(result, (-1, 0xff, 0xffffffff, 0x7fffffffffffffff))
 
 
 if __name__ == '__main__':

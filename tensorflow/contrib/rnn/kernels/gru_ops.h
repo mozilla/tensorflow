@@ -33,30 +33,53 @@ struct GRUCell {
         input_size_(input_size),
         cell_size_(cell_size) {}
 
-  inline Eigen::array<Eigen::DenseIndex, 2> x_offsets() const { return {0, 0}; }
-
-  inline Eigen::array<Eigen::DenseIndex, 2> x_extends() const {
-    return {batch_size_, input_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> x_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = 0;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> h_offsets() const {
-    return {0, input_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> x_extends() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = input_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> h_extends() const {
-    return {batch_size_, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> h_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = input_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> ru_r_offset() const {
-    return {0, 0};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> h_extends() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = cell_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> ru_u_offset() const {
-    return {0, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> ru_r_offset() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = 0;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> cell_extents() const {
-    return {batch_size_, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> ru_u_offset() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = cell_size_;
+    return ret;
+  }
+
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> cell_extents() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = cell_size_;
+    return ret;
   }
 
  protected:

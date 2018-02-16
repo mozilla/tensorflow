@@ -34,6 +34,9 @@ limitations under the License.
 namespace tensorflow {
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
+#ifdef TENSORFLOW_USE_SYCL
+using SYCLDevice = Eigen::SyclDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace functor {
 
@@ -638,7 +641,7 @@ class FusedBatchNormGradOp : public OpKernel {
     Tensor* placeholder_1 = nullptr;
     OP_REQUIRES_OK(
         context, context->allocate_output(3, TensorShape({}), &placeholder_1));
-    functor::SetZeroFunctor<Device, float> f;
+    functor::SetZeroFunctor<Device, U> f;
     f(context->eigen_device<Device>(), placeholder_1->flat<U>());
     Tensor* placeholder_2 = nullptr;
     OP_REQUIRES_OK(
@@ -753,5 +756,189 @@ REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV2")
                         FusedBatchNormGradOp<GPUDevice, Eigen::half, float>);
 
 #endif
+
+#ifdef TENSORFLOW_USE_SYCL
+namespace functor {
+template <typename T, typename U>
+struct FusedBatchNorm<SYCLDevice, T, U> {
+  void operator()(OpKernelContext* context, const Tensor& x_input,
+                  const Tensor& scale_input, const Tensor& offset_input,
+                  const Tensor& estimated_mean_input,
+                  const Tensor& estimated_variance_input, U epsilon,
+                  Tensor* y_output, Tensor* batch_mean_output,
+                  Tensor* batch_var_output, Tensor* saved_mean_output,
+                  Tensor* saved_var_output, TensorFormat tensor_format,
+                  bool is_training) {
+    OP_REQUIRES(context, tensor_format == FORMAT_NHWC,
+                errors::Internal("The SYCL implementation of FusedBatchNorm "
+                                 "only supports NHWC tensor format for now."));
+    typename TTypes<T, 4>::ConstTensor x(x_input.tensor<T, 4>());
+    typename TTypes<U>::ConstVec scale(scale_input.vec<U>());
+    typename TTypes<U>::ConstVec offset(offset_input.vec<U>());
+    typename TTypes<T, 4>::Tensor y(y_output->tensor<T, 4>());
+
+    const SYCLDevice& d = context->eigen_device<SYCLDevice>();
+    const int depth = x.dimension(3);
+    const int size = x.size();
+    const int rest_size = size / depth;
+    Eigen::DSizes<Eigen::Index, 2> rest_by_depth(rest_size, depth);
+
+#if !defined(EIGEN_HAS_INDEX_LIST)
+    Eigen::DSizes<Eigen::Index, 2> one_by_depth(1, depth);
+    Eigen::array<int, 1> reduce_dims({0});
+    Eigen::array<int, 2> bcast_spec({rest_size, 1});
+#else
+    Eigen::IndexList<Eigen::type2index<1>, Eigen::Index> one_by_depth;
+    one_by_depth.set(1, depth);
+    Eigen::IndexList<Eigen::type2index<0> > reduce_dims;
+    Eigen::IndexList<Eigen::Index, Eigen::type2index<1> > bcast_spec;
+    bcast_spec.set(0, rest_size);
+#endif
+
+    auto x_rest_by_depth = x.reshape(rest_by_depth).template cast<U>();
+    if (is_training) {
+      typename TTypes<U>::Vec batch_mean(batch_mean_output->vec<U>());
+      typename TTypes<U>::Vec batch_var(batch_var_output->vec<U>());
+      typename TTypes<U>::Vec saved_mean(saved_mean_output->vec<U>());
+      typename TTypes<U>::Vec saved_var(saved_var_output->vec<U>());
+
+      const int rest_size_minus_one = (rest_size > 1) ? (rest_size - 1) : 1;
+      // This adjustment is for Bessel's correction
+      U rest_size_adjust = static_cast<U>(rest_size) / static_cast<U>(rest_size_minus_one);
+
+      saved_mean.device(d) = x_rest_by_depth.mean(reduce_dims);
+      d.memcpy(batch_mean.data(), saved_mean.data(), depth * sizeof(U));
+      auto x_centered = (x_rest_by_depth - saved_mean.reshape(one_by_depth).broadcast(bcast_spec));
+      saved_var.device(d) = x_centered.square().mean(reduce_dims);
+      batch_var.device(d) = saved_var * rest_size_adjust;
+
+      auto scaling_factor = ((saved_var + epsilon).rsqrt() * scale).reshape(one_by_depth).broadcast(bcast_spec);
+      auto x_scaled = x_centered * scaling_factor;
+      auto x_shifted = x_scaled + offset.reshape(one_by_depth).broadcast(bcast_spec);
+      y.reshape(rest_by_depth).device(d) = x_shifted.template cast<T>();
+    }
+    else {
+      typename TTypes<U>::ConstVec estimated_mean(estimated_mean_input.vec<U>());
+      typename TTypes<U>::ConstVec estimated_variance(estimated_variance_input.vec<U>());
+
+      auto x_centered = x_rest_by_depth - estimated_mean.reshape(one_by_depth).broadcast(bcast_spec);
+      auto scaling_factor = ((estimated_variance + epsilon).rsqrt() * scale)
+                              .reshape(one_by_depth).broadcast(bcast_spec);
+      auto x_scaled = x_centered * scaling_factor;
+      auto x_shifted = x_scaled + offset.reshape(one_by_depth).broadcast(bcast_spec);
+      y.reshape(rest_by_depth).device(d) = x_shifted.template cast<T>();
+    }
+  }
+};
+
+template <typename T, typename U>
+struct FusedBatchNormGrad<SYCLDevice, T, U> {
+  void operator()(OpKernelContext* context, const Tensor& y_backprop_input,
+                  const Tensor& x_input, const Tensor& scale_input,
+                  const Tensor& mean_input, const Tensor& variance_input,
+                  U epsilon, Tensor* x_backprop_output,
+                  Tensor* scale_backprop_output, Tensor* offset_backprop_output,
+                  TensorFormat tensor_format) {
+    OP_REQUIRES(context, tensor_format == FORMAT_NHWC,
+                errors::Internal("The SYCL implementation of FusedBatchNormGrad "
+                                 "only supports NHWC tensor format for now."));
+    typename TTypes<T, 4>::ConstTensor y_backprop(
+        y_backprop_input.tensor<T, 4>());
+    typename TTypes<T, 4>::ConstTensor x(x_input.tensor<T, 4>());
+    typename TTypes<U>::ConstVec scale(scale_input.vec<U>());
+    typename TTypes<U>::ConstVec mean(mean_input.vec<U>());
+    typename TTypes<U>::ConstVec variance(variance_input.vec<U>());
+    typename TTypes<T, 4>::Tensor x_backprop(x_backprop_output->tensor<T, 4>());
+    typename TTypes<U>::Vec scale_backprop(scale_backprop_output->vec<U>());
+    typename TTypes<U>::Vec offset_backprop(offset_backprop_output->vec<U>());
+
+    // Note: the following formulas are used to compute the gradients for
+    // back propagation.
+    // x_backprop = scale * rsqrt(variance + epsilon) *
+    //              [y_backprop - mean(y_backprop) - (x - mean(x)) *
+    //              mean(y_backprop * (x - mean(x))) / (variance + epsilon)]
+    // scale_backprop = sum(y_backprop *
+    //                  (x - mean(x)) * rsqrt(variance + epsilon))
+    // offset_backprop = sum(y_backprop)
+
+    const SYCLDevice& d = context->eigen_device<SYCLDevice>();
+    const int depth = x.dimension(3);
+    const int size = x.size();
+    const int rest_size = size / depth;
+    Eigen::DSizes<Eigen::Index, 2> rest_by_depth(rest_size, depth);
+
+#if !defined(EIGEN_HAS_INDEX_LIST)
+    Eigen::DSizes<Eigen::Index, 2> one_by_depth(1, depth);
+    Eigen::array<int, 1> reduce_dims({0});
+    Eigen::array<int, 2> bcast_spec({rest_size, 1});
+#else
+    Eigen::IndexList<Eigen::type2index<1>, Eigen::Index> one_by_depth;
+    one_by_depth.set(1, depth);
+    Eigen::IndexList<Eigen::type2index<0> > reduce_dims;
+    Eigen::IndexList<Eigen::Index, Eigen::type2index<1> > bcast_spec;
+    bcast_spec.set(0, rest_size);
+#endif
+
+    auto x_rest_by_depth = x.reshape(rest_by_depth).template cast<U>();
+    U rest_size_inv = static_cast<U>(1.0f / static_cast<U>(rest_size));
+
+    auto x_mean_rest_by_depth =
+        mean.reshape(one_by_depth).broadcast(bcast_spec);
+    auto x_centered = (x_rest_by_depth - x_mean_rest_by_depth).eval();
+    auto coef0 = (variance + epsilon).rsqrt();
+    auto coef0_rest_by_depth =
+        coef0.eval().reshape(one_by_depth).broadcast(bcast_spec);
+    auto x_scaled = x_centered * coef0_rest_by_depth;
+
+    auto y_backprop_rest_by_depth =
+        y_backprop.eval().reshape(rest_by_depth).template cast<U>();
+    scale_backprop.device(d) =
+        (y_backprop_rest_by_depth * x_scaled).sum(reduce_dims);
+    auto y_backprop_sum = y_backprop_rest_by_depth.sum(reduce_dims);
+    offset_backprop.device(d) = y_backprop_sum;
+
+    auto y_backprop_sum_one_by_depth =
+        y_backprop_sum.eval().reshape(one_by_depth);
+    auto y_backprop_mean_one_by_depth =
+        y_backprop_sum_one_by_depth * rest_size_inv;
+    auto y_backprop_mean_rest_by_depth =
+        y_backprop_mean_one_by_depth.broadcast(bcast_spec);
+    auto y_backprop_centered =
+        y_backprop_rest_by_depth - y_backprop_mean_rest_by_depth;
+    auto coef1 =
+        (scale * coef0).eval().reshape(one_by_depth).broadcast(bcast_spec);
+    auto coef2 = (coef0.square() *
+                  (y_backprop_rest_by_depth * x_centered).mean(reduce_dims))
+                     .eval()
+                     .reshape(one_by_depth)
+                     .broadcast(bcast_spec);
+    x_backprop.reshape(rest_by_depth).device(d) =
+        (coef1 * (y_backprop_centered - x_centered * coef2)).template cast<T>();
+  }
+};
+
+}  // namespace functor
+
+#define REGISTER_SYCL_FUSEDBATCH(type)                                         \
+REGISTER_KERNEL_BUILDER(                                                       \
+    Name("FusedBatchNorm").Device(DEVICE_SYCL).TypeConstraint<type>("T"),      \
+    FusedBatchNormOp<SYCLDevice, type, type>);                                 \
+REGISTER_KERNEL_BUILDER(                                                       \
+    Name("FusedBatchNormGrad").Device(DEVICE_SYCL).TypeConstraint<type>("T"),  \
+    FusedBatchNormGradOp<SYCLDevice, type, type>);                             \
+REGISTER_KERNEL_BUILDER(Name("FusedBatchNormV2")                               \
+                            .Device(DEVICE_SYCL)                               \
+                            .TypeConstraint<type>("T")                         \
+                            .TypeConstraint<type>("U"),                        \
+                        FusedBatchNormOp<SYCLDevice, type, type>);             \
+REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV2")                           \
+                            .Device(DEVICE_SYCL)                               \
+                            .TypeConstraint<type>("T")                         \
+                            .TypeConstraint<type>("U"),                        \
+                        FusedBatchNormGradOp<SYCLDevice, type, type>);
+
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_FUSEDBATCH);
+#undef REGISTER_SYCL_FUSEDBATCH
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow

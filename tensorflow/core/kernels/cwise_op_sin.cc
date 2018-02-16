@@ -24,6 +24,8 @@ REGISTER3(UnaryOp, GPU, "Sin", functor::sin, float, Eigen::half, double);
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "Sin", functor::sin, float, double);
-#endif  // TENSORFLOW_USE_SYC
+#define REGISTER_SYCL(type) REGISTER(UnaryOp, SYCL, "Sin", functor::sin, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

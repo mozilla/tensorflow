@@ -117,15 +117,16 @@ REGISTER_KERNEL(GPU, Variant);
   REGISTER_KERNEL_BUILDER(                                            \
       Name("Const").Device(DEVICE_##D).TypeConstraint<TYPE>("dtype"), \
       ConstantOp);
-REGISTER_SYCL_KERNEL(SYCL, float);
-REGISTER_SYCL_KERNEL(SYCL, double);
-REGISTER_SYCL_KERNEL(SYCL, uint8);
-REGISTER_SYCL_KERNEL(SYCL, int8);
-REGISTER_SYCL_KERNEL(SYCL, uint16);
-REGISTER_SYCL_KERNEL(SYCL, int16);
-REGISTER_SYCL_KERNEL(SYCL, int64);
-REGISTER_SYCL_KERNEL(SYCL, bool);
+#define REGISTER_SYCL(type) REGISTER_SYCL_KERNEL(SYCL, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_uint8(REGISTER_SYCL);
+TF_CALL_uint16(REGISTER_SYCL);
+TF_CALL_int8(REGISTER_SYCL);
+TF_CALL_int16(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
 #undef REGISTER_SYCL_KERNEL
+#undef REGISTER_SYCL
 #endif
 
 HostConstantOp::HostConstantOp(OpKernelConstruction* ctx)
@@ -222,13 +223,13 @@ REGISTER_KERNEL(CPU, quint16);
 #undef REGISTER_CPU_KERNEL
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL(SYCL, float);
-REGISTER_KERNEL(SYCL, double);
-REGISTER_KERNEL(SYCL, uint8);
-REGISTER_KERNEL(SYCL, int8);
-REGISTER_KERNEL(SYCL, uint16);
-REGISTER_KERNEL(SYCL, int16);
-REGISTER_KERNEL(SYCL, int64);
+#define REGISTER_SYCL(type) REGISTER_KERNEL(SYCL, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_uint8(REGISTER_SYCL);
+TF_CALL_uint16(REGISTER_SYCL);
+TF_CALL_int8(REGISTER_SYCL);
+TF_CALL_int16(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
 
 REGISTER_KERNEL_BUILDER(Name("Fill")
                             .Device(DEVICE_SYCL)
@@ -239,6 +240,7 @@ REGISTER_KERNEL_BUILDER(Name("Fill")
                             .HostMemory("output"),
                         FillOp<CPUDevice, int32, int32>);
 #undef REGISTER_KERNEL_SYCL
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
@@ -309,15 +311,16 @@ REGISTER_CPU(Variant);
 #undef REGISTER_CPU
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL(bool, SYCL);
-REGISTER_KERNEL(float, SYCL);
-REGISTER_KERNEL(double, SYCL);
-REGISTER_KERNEL(int64, SYCL);
+#define REGISTER_SYCL(type) REGISTER_KERNEL(type, SYCL)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
 REGISTER_KERNEL_BUILDER(Name("ZerosLike")
                             .Device(DEVICE_SYCL)
                             .TypeConstraint<int32>("T")
                             .HostMemory("y"),
                         ZerosLikeOp<CPUDevice, int32>);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
@@ -364,13 +367,16 @@ TF_CALL_POD_TYPES(REGISTER_CPU);
 #undef REGISTER_CPU
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL(float, SYCL);
-REGISTER_KERNEL(bool, SYCL);
+#define REGISTER_SYCL(type) REGISTER_KERNEL(type, SYCL)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
 REGISTER_KERNEL_BUILDER(Name("OnesLike")
                             .Device(DEVICE_SYCL)
                             .TypeConstraint<int32>("T")
                             .HostMemory("y"),
                         OnesLikeOp<CPUDevice, int32>);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA

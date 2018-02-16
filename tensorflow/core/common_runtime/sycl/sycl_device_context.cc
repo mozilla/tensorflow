@@ -86,6 +86,16 @@ void SYCLDeviceContext::CopyCPUTensorToDevice(const Tensor *cpu_tensor,
             static_cast<uint16 *>(dst_ptr),
             static_cast<const uint16 *>(src_ptr), total_bytes);
         break;
+      case DT_UINT32:
+        device->eigen_sycl_device()->memcpyHostToDevice(
+            static_cast<uint32 *>(dst_ptr),
+            static_cast<const uint32 *>(src_ptr), total_bytes);
+        break;
+      case DT_UINT64:
+        device->eigen_sycl_device()->memcpyHostToDevice(
+            static_cast<uint64 *>(dst_ptr),
+            static_cast<const uint64 *>(src_ptr), total_bytes);
+        break;
       case DT_BOOL:
         device->eigen_sycl_device()->memcpyHostToDevice(
             static_cast<bool *>(dst_ptr), static_cast<const bool *>(src_ptr),
@@ -163,6 +173,16 @@ void SYCLDeviceContext::CopyDeviceTensorToCPU(const Tensor *device_tensor,
         device->eigen_sycl_device()->memcpyDeviceToHost(
             static_cast<uint16 *>(dst_ptr),
             static_cast<const uint16 *>(src_ptr), total_bytes);
+        break;
+      case DT_UINT32:
+        device->eigen_sycl_device()->memcpyDeviceToHost(
+            static_cast<uint32 *>(dst_ptr),
+            static_cast<const uint32 *>(src_ptr), total_bytes);
+        break;
+      case DT_UINT64:
+        device->eigen_sycl_device()->memcpyDeviceToHost(
+            static_cast<uint64 *>(dst_ptr),
+            static_cast<const uint64 *>(src_ptr), total_bytes);
         break;
       case DT_BOOL:
         device->eigen_sycl_device()->memcpyDeviceToHost(

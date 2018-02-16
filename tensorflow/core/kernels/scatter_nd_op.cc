@@ -242,6 +242,23 @@ TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_ADD_SUB_CPU);
 TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_UPDATE_CPU);
 TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_CPU);
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SCATTER_ND_SYCL(type) REGISTER_SCATTER_ND(type, SYCL);
+
+#define REGISTER_SCATTER_ND_ADD_SUB_SYCL(type) \
+  REGISTER_SCATTER_ND_ADD_SUB(type, SYCL);
+
+#define REGISTER_SCATTER_ND_UPDATE_SYCL(type) \
+  REGISTER_SCATTER_ND_UPDATE(type, SYCL);
+
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_ADD_SUB_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_UPDATE_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_SYCL);
+
+#undef REGISTER_SCATTER_ND_ADD_SUB_SYCL
+#undef REGISTER_SCATTER_ND_UPDATE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
+
 // Registers GPU kernels.
 #if GOOGLE_CUDA
 
@@ -262,27 +279,10 @@ TF_CALL_complex64(REGISTER_SCATTER_ND_ALL_GPU);
 TF_CALL_complex128(REGISTER_SCATTER_ND_ALL_GPU);
 
 #undef REGISTER_SCATTER_ND_ALL_GPU
-
-#ifdef TENSORFLOW_USE_SYCL
-#define REGISTER_SCATTER_ND_ADD_SUB_SYCL(type) \
-  REGISTER_SCATTER_ND_ADD_SUB(type, SYCL);
-
-#define REGISTER_SCATTER_ND_UPDATE_SYCL(type) \
-  REGISTER_SCATTER_ND_UPDATE(type, SYCL);
-
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ND_ADD_SUB_SYCL);
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ND_UPDATE_SYCL);
-#undef REGISTER_SCATTER_ND_ADD_SUB_SYCL
-#undef REGISTER_SCATTER_ND_UPDATE_SYCL
-#endif  // TENSORFLOW_USE_SYCL
-
-#undef REGISTER_SCATTER_ND_ADD
 #undef REGISTER_SCATTER_ND_ADD_SUB
 #undef REGISTER_SCATTER_ND_ADD_SUB_CPU
-#undef REGISTER_SCATTER_ND_ADD_SUB_GPU
 #undef REGISTER_SCATTER_ND_UPDATE
 #undef REGISTER_SCATTER_ND_UPDATE_CPU
-#undef REGISTER_SCATTER_ND_UPDATE_GPU
 #undef REGISTER_SCATTER_ND_KERNEL
 #undef REGISTER_SCATTER_ND_KERNEL_INDEX
 
@@ -398,40 +398,6 @@ Status PrepareAndValidateInputs(const TensorShape& params_shape,
   return Status::OK();
 }
 
-template <typename Device, typename Index>
-class IndexFlattener {
- public:
-  inline typename TTypes<Index, 2>::ConstTensor operator()(
-      OpKernelContext*, const Tensor& indices) {
-    return indices.flat_inner_dims<Index>();
-  }
-};
-
-#ifdef TENSORFLOW_USE_SYCL
-template <typename Index>
-class IndexFlattener<SYCLDevice, Index> {
- public:
-  IndexFlattener() { indices_host_ = nullptr; }
-  ~IndexFlattener() { delete[] indices_host_; }
-
-  inline typename TTypes<Index, 2>::ConstTensor operator()(
-      OpKernelContext* c, const Tensor& indices) {
-    size_t num_indices = indices.NumElements();
-    indices_host_ = new Index[num_indices];
-    auto device = c->eigen_sycl_device();
-    auto size = sizeof(Index) * num_indices;
-    auto src_ptr = GetBase(&indices);
-    device.memcpyDeviceToHost(indices_host_, static_cast<const Index*>(src_ptr),
-                              size);
-    return typename TTypes<Index, 2>::ConstTensor(
-        indices_host_, indices.shape().AsEigenDSizes<2>());
-  }
-
- private:
-  Index* indices_host_;
-};
-#endif
-
 template <typename Device, typename T, typename Index,
           scatter_nd_op::UpdateOp Op>
 Status DoScatterNd(OpKernelContext* c, const Tensor& indices,
@@ -443,8 +409,7 @@ Status DoScatterNd(OpKernelContext* c, const Tensor& indices,
   TF_RETURN_IF_ERROR(PrepareAndValidateInputs<Index>(
       shape, indices, updates, &slice_dim, &num_updates, &slice_size));
 
-  IndexFlattener<Device, Index> index_flattener;
-  auto indices_flat = index_flattener(c, indices);
+  auto indices_flat = indices.flat_inner_dims<Index>();
   auto updates_flat = updates.shaped<T, 2>({num_updates, slice_size});
 
   if (allocate) {

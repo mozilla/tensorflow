@@ -196,8 +196,7 @@ TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
       BiasOp<SYCLDevice, type>);
 
 TF_CALL_INTEGRAL_TYPES(REGISTER_KERNEL);
-REGISTER_KERNEL(float);
-REGISTER_KERNEL(double);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
 
@@ -238,8 +237,9 @@ class BiasGradOp : public OpKernel {
     if (channel == 0) {
       return;  // Nothing to do
     } else if (output_backprop.NumElements() == 0) {
-      // Eigen often crashes by design on empty tensors, but setZero is safe
-      output->template flat<T>().setZero();
+      // Eigen often crashes by design on empty tensors, but this is safe
+      output->template flat<T>().device(context->eigen_device<Device>()) =
+        output->template flat<T>().constant(T(0));
     } else {
       // Added by intel_tf to support NCHW on CPU regardless of MKL used or not.
       if (data_format_ == FORMAT_NCHW) {
@@ -298,8 +298,7 @@ TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
       BiasGradOp<SYCLDevice, type>);
 
 TF_CALL_INTEGRAL_TYPES(REGISTER_KERNEL);
-REGISTER_KERNEL(float);
-REGISTER_KERNEL(double);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
 

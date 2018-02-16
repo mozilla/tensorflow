@@ -149,7 +149,7 @@ def GetTestConfigs():
     all the valid test configs as tuples of data_format and use_gpu.
   """
   test_configs = [("NHWC", False), ("NHWC", True)]
-  if test.is_gpu_available(cuda_only=True):
+  if test.is_gpu_available():
     # "NCHW" format is only supported on CUDA.
     test_configs += [("NCHW", True)]
   return test_configs
@@ -1747,7 +1747,7 @@ class SeparableConv2DTest(test.TestCase):
     self._testSeparableConv2D("NHWC")
 
   def testSeparableConv2DNCHW(self):
-    if not test.is_gpu_available():
+    if not test.is_gpu_available(cuda_only=True):
       return
     self._testSeparableConv2D("NCHW")
 
@@ -1784,7 +1784,7 @@ class SeparableConv2DTest(test.TestCase):
     self._testSeparableConv2DEqualInputOutputDepth("NHWC")
 
   def testSeparableConv2DEqualInputOutputDepthNCHW(self):
-    if not test.is_gpu_available():
+    if not test.is_gpu_available(cuda_only=True):
       return
     self._testSeparableConv2DEqualInputOutputDepth("NCHW")
 

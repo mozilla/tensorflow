@@ -34,7 +34,10 @@ REGISTER_KERNEL_BUILDER(Name("Sign")
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER3(UnaryOp, SYCL, "Sign", functor::sign, float, double, int64);
+REGISTER(UnaryOp, SYCL, "Sign", functor::sign, int64);
+#define REGISTER_SYCL(type) REGISTER(UnaryOp, SYCL, "Sign", functor::sign, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 REGISTER_KERNEL_BUILDER(Name("Sign")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")

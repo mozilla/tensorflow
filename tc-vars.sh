@@ -16,6 +16,9 @@ if [ "${OS}" = "Linux" ]; then
     CUDNN_URL=http://developer.download.nvidia.com/compute/redist/cudnn/v7.0.5/cudnn-9.0-linux-x64-v7.tgz
     CUDNN_SHA256=1a3e076447d5b9860c73d9bebe7087ffcb7b0c8814fd1e506096435a2ad9ab0e
 
+    COMPUTECPP_URL=https://computecpp.codeplay.com/downloads/computecpp-ce/0.5.1/ubuntu-14.04-64bit.tar.gz
+    COMPUTECPP_SHA256=57bd757a878f0ce81557e1dad62e7dfa88eaf48b111f692d31f5e5861ca4c0a2
+
 elif [ "${OS}" = "Darwin" ]; then
     if [ -z "${TASKCLUSTER_TASK_DIR}" -o -z "${TASKCLUSTER_ARTIFACTS}" ]; then
         echo "Inconsistent OSX setup: missing some vars."
@@ -55,6 +58,7 @@ fi;
 export TF_NEED_JEMALLOC
 export TF_NEED_GCP=0
 export TF_NEED_HDFS=0
+export TF_NEED_CUDA=0
 export TF_NEED_OPENCL_SYCL=0
 export TF_NEED_MKL=0
 export TF_NEED_VERBS=0
@@ -96,8 +100,10 @@ fi;
 
 ### Define build parameters/env variables that we will re-ues in sourcing scripts.
 TF_CUDA_FLAGS="TF_CUDA_CLANG=0 TF_CUDA_VERSION=9.0 TF_CUDNN_VERSION=7 CUDA_TOOLKIT_PATH=${DS_ROOT_TASK}/DeepSpeech/CUDA CUDNN_INSTALL_PATH=${DS_ROOT_TASK}/DeepSpeech/CUDA TF_CUDA_COMPUTE_CAPABILITIES=\"3.0,3.5,3.7,5.2,6.0,6.1\""
+TF_CCPP_FLAGS="TF_NEED_COMPUTECPP=1 COMPUTECPP_TOOLKIT_PATH=${DS_ROOT_TASK}/DeepSpeech/ComputeCpp-CE/"
 BAZEL_ARM_FLAGS="--config=rpi3"
 BAZEL_CUDA_FLAGS="--config=cuda"
+BAZEL_CCPP_FLAGS="--config=sycl"
 BAZEL_EXTRA_FLAGS="--copt=-fvisibility=hidden"
 
 ### Define build targets that we will re-ues in sourcing scripts.

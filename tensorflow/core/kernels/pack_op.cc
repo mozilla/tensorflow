@@ -120,7 +120,8 @@ class PackOp : public OpKernel {
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
       if (std::is_same<Device, SYCLDevice>::value) {
-        ConcatSYCL<T>(c->eigen_sycl_device(), inputs_flat, &output_flat);
+        ConcatSYCL<T>(c->eigen_sycl_device(), inputs_flat, output,
+                      &output_flat);
         return;
       }
 #endif  // TENSORFLOW_USE_SYCL
@@ -179,7 +180,9 @@ REGISTER_KERNEL_BUILDER(Name("Pack")
       Name("Pack").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       PackOp<SYCLDevice, type>)
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
 REGISTER_KERNEL_BUILDER(Name("Pack")
                             .Device(DEVICE_SYCL)
                             .HostMemory("values")

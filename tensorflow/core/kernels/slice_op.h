@@ -32,7 +32,8 @@ struct Slice {
                   const Eigen::DSizes<Eigen::DenseIndex, NDIMS>& slice_sizes) {
     bool use_64bit = (input.size() > Eigen::NumTraits<int>::highest());
     if (!use_64bit &&
-        Eigen::internal::is_same<Device, Eigen::GpuDevice>::value) {
+        (Eigen::internal::is_same<Device, Eigen::GpuDevice>::value ||
+         Eigen::internal::is_same<Device, Eigen::SyclDevice>::value)) {
       Eigen::DSizes<int, NDIMS> indices;
       for (int i = 0; i < NDIMS; ++i) {
         indices[i] = slice_indices[i];

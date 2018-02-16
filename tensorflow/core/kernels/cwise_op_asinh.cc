@@ -21,7 +21,10 @@ REGISTER4(UnaryOp, CPU, "Asinh", functor::asinh, float, double, complex64,
           complex128);
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "Asinh", functor::asinh, float, double);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "Asinh", functor::asinh, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA

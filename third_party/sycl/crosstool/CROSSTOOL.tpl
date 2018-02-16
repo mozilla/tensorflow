@@ -8,6 +8,11 @@ default_toolchain {
 }
 
 default_toolchain {
+  cpu: "aarch64"
+  toolchain_identifier: "local_arm"
+}
+
+default_toolchain {
   cpu: "arm"
   toolchain_identifier: "local_arm"
 }
@@ -19,13 +24,6 @@ toolchain {
   compiler: "compiler"
   host_system_name: "local"
   needsPic: true
-  supports_gold_linker: false
-  supports_incremental_linker: false
-  supports_fission: false
-  supports_interface_shared_objects: false
-  supports_normalizing_ar: false
-  supports_start_end_lib: false
-  supports_thin_archives: false
   target_libc: "local"
   target_cpu: "local"
   target_system_name: "local"
@@ -83,16 +81,9 @@ toolchain {
 
   # Anticipated future default.
   linker_flag: "-no-canonical-prefixes"
-  unfiltered_cxx_flag: "-fno-canonical-system-headers"
-
-  # Have gcc return the exit code from ld.
-  linker_flag: "-pass-exit-codes"
 
   # All warnings are enabled. Maybe enable -Werror as well?
   compiler_flag: "-Wall"
-
-  # Enable SSE instructions by default
-  compiler_flag: "-msse3"
 
   # Anticipated future default.
   linker_flag: "-Wl,-no-as-needed"
@@ -115,7 +106,7 @@ toolchain {
   compilation_mode_flags {
     mode: OPT
     compiler_flag: "-g0"
-    compiler_flag: "-O2"
+    compiler_flag: "-O3"
     compiler_flag: "-DNDEBUG"
     compiler_flag: "-ffunction-sections"
     compiler_flag: "-fdata-sections"
@@ -187,6 +178,18 @@ toolchain {
   unfiltered_cxx_flag: "-D__TIMESTAMP__=\"redacted\""
   unfiltered_cxx_flag: "-D__TIME__=\"redacted\""
 
+  compiler_flag: "-fPIE"
+
+  # Keep stack frames for debugging, even in opt mode.
+  compiler_flag: "-fno-omit-frame-pointer"
+
+  # Anticipated future default.
+  linker_flag: "-no-canonical-prefixes"
+  unfiltered_cxx_flag: "-fno-canonical-system-headers"
+
+  # Have gcc return the exit code from ld.
+  linker_flag: "-pass-exit-codes"
+
   # All warnings are enabled. Maybe enable -Werror as well?
   compiler_flag: "-Wall"
 
@@ -211,7 +214,10 @@ toolchain {
   compilation_mode_flags {
     mode: OPT
     compiler_flag: "-g0"
-    compiler_flag: "-O2"
+    compiler_flag: "-O3"
     compiler_flag: "-DNDEBUG"
+    compiler_flag: "-ffunction-sections"
+    compiler_flag: "-fdata-sections"
+    linker_flag: "-Wl,--gc-sections"
   }
 }

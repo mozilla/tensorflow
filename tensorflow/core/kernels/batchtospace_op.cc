@@ -23,7 +23,6 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/spacetobatch_functor.h"
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -33,11 +32,15 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T>
 static void BatchToSpaceOpCompute(OpKernelContext* context,
@@ -283,5 +286,23 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER);
 TF_CALL_GPU_NUMBER_TYPES(REGISTER);
 #undef REGISTER
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER(T)                                         \
+  REGISTER_KERNEL_BUILDER(Name("BatchToSpaceND")            \
+                              .Device(DEVICE_SYCL)          \
+                              .TypeConstraint<T>("T")       \
+                              .HostMemory("block_shape")    \
+                              .HostMemory("crops"),         \
+                          BatchToSpaceNDOp<SYCLDevice, T>); \
+  REGISTER_KERNEL_BUILDER(Name("BatchToSpace")              \
+                              .Device(DEVICE_SYCL)          \
+                              .TypeConstraint<T>("T")       \
+                              .HostMemory("crops"),         \
+                          BatchToSpaceOp<SYCLDevice, T>);
+
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER)
+#undef REGISTER
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // end namespace tensorflow

@@ -36,6 +36,9 @@ limitations under the License.
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 // Variant compatible type for a list of tensors. This is mutable but instances
 // should never be mutated after stored in a variant tensor.
@@ -173,6 +176,12 @@ REGISTER_KERNEL_BUILDER(
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("EmptyTensorList").Device(DEVICE_SYCL).HostMemory("element_shape"),
+    EmptyTensorList);
+#endif  // TENSORFLOW_USE_SYCL
+
 class TensorListPushBack : public OpKernel {
  public:
   explicit TensorListPushBack(OpKernelConstruction* c) : OpKernel(c) {
@@ -230,6 +239,11 @@ REGISTER_KERNEL_BUILDER(Name("TensorListPushBack").Device(DEVICE_GPU),
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListPushBack").Device(DEVICE_SYCL),
+                        TensorListPushBack);
+#endif  // TENSORFLOW_USE_SYCL
+
 class TensorListLength : public OpKernel {
  public:
   explicit TensorListLength(OpKernelConstruction* c) : OpKernel(c) {}
@@ -258,6 +272,12 @@ REGISTER_KERNEL_BUILDER(
     TensorListLength);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("TensorListLength").Device(DEVICE_SYCL).HostMemory("length"),
+    TensorListLength);
+#endif  // TENSORFLOW_USE_SYCL
 
 class TensorListElementShape : public OpKernel {
  public:
@@ -297,6 +317,13 @@ REGISTER_KERNEL_BUILDER(Name("TensorListElementShape")
                         TensorListElementShape);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListElementShape")
+                             .Device(DEVICE_SYCL)
+                             .HostMemory("element_shape"),
+                        TensorListElementShape);
+#endif  // TENSORFLOW_USE_SYCL
 
 class TensorListPopBack : public OpKernel {
  public:
@@ -346,6 +373,11 @@ REGISTER_KERNEL_BUILDER(Name("TensorListPopBack").Device(DEVICE_GPU),
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListPopBack").Device(DEVICE_SYCL),
+                        TensorListPopBack);
+#endif  // TENSORFLOW_USE_SYCL
+
 class TensorListReserve : public OpKernel {
  public:
   explicit TensorListReserve(OpKernelConstruction* c) : OpKernel(c) {
@@ -383,6 +415,14 @@ REGISTER_KERNEL_BUILDER(Name("TensorListReserve")
                         TensorListReserve);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListReserve")
+                            .Device(DEVICE_SYCL)
+                            .HostMemory("element_shape")
+                            .HostMemory("num_elements"),
+                        TensorListReserve);
+#endif  // TENSORFLOW_USE_SYCL
 
 class TensorListGetItem : public OpKernel {
  public:
@@ -426,6 +466,12 @@ REGISTER_KERNEL_BUILDER(
     TensorListGetItem);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("TensorListGetItem").Device(DEVICE_SYCL).HostMemory("index"),
+    TensorListGetItem);
+#endif  // TENSORFLOW_USE_SYCL
 
 class TensorListSetItem : public OpKernel {
  public:
@@ -473,6 +519,12 @@ REGISTER_KERNEL_BUILDER(
     TensorListSetItem);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("TensorListSetItem").Device(DEVICE_SYCL).HostMemory("index"),
+    TensorListSetItem);
+#endif  // TENSORFLOW_USE_SYCL
 
 #define REGISTER_TENSOR_LIST_STACK_CPU(T)                         \
   REGISTER_KERNEL_BUILDER(Name("TensorListStack")                 \

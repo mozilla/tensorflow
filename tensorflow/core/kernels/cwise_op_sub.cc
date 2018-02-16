@@ -45,7 +45,10 @@ REGISTER_KERNEL_BUILDER(Name("Sub")
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER3(BinaryOp, SYCL, "Sub", functor::sub, float, double, int64);
+REGISTER(BinaryOp, SYCL, "Sub", functor::sub, int64);
+#define REGISTER_SYCL(type) REGISTER(BinaryOp, SYCL, "Sub", functor::sub, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 REGISTER_KERNEL_BUILDER(Name("Sub")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")

@@ -40,6 +40,8 @@ limitations under the License.
 
 namespace tensorflow {
 
+typedef Eigen::ThreadPoolDevice CPUDevice;
+
 namespace {
 
 // We don't want to allocate a buffer to hold all the patches if the size is
@@ -251,7 +253,7 @@ CalculatePerCachePixelParameters(int64 cache_x, int64 cache_start_x,
 
 // Combines bilinear resizing and mirror padding into the im2col transformation
 // stage of convolution.
-template <class T1, class T2, class T3, class TGemmFunctor,
+template <class Device, class T1, class T2, class T3, class TGemmFunctor,
           SamplingMode SampleMode>
 class FusedResizeAndPadConvFunctor {
  public:
@@ -282,6 +284,9 @@ class FusedResizeAndPadConvFunctor {
                    << output_width << ", " << output_height;
       return;
     }
+
+    auto device = context->eigen_device<Device>();
+
     OP_REQUIRES(
         context, ((SampleMode == NEAREST) || (SampleMode == BILINEAR)),
         errors::InvalidArgument("Bad sample mode passed in", SampleMode));
@@ -589,7 +594,7 @@ class FusedResizeAndPadConvFunctor {
             T3* chunk_output_data =
                 output_data + (start_patch_index * filter_count);
             TGemmFunctor gemm_functor;
-            gemm_functor(context, m, n, k, im2col_buffer, lda, filter_data, ldb,
+            gemm_functor(device, m, n, k, im2col_buffer, lda, filter_data, ldb,
                          chunk_output_data, ldc);
           }
         }
@@ -870,26 +875,28 @@ class FusedResizeConv2DUsingGemmOp : public OpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(FusedResizeConv2DUsingGemmOp);
 };
 
-#define REGISTER_FUSED(T)                                                 \
-  REGISTER_KERNEL_BUILDER(                                                \
-      Name("FusedResizeAndPadConv2D")                                     \
-          .Device(DEVICE_CPU)                                             \
-          .TypeConstraint<T>("T"),                                        \
-      FusedResizeConv2DUsingGemmOp<                                       \
-          T,                                                              \
-          FusedResizeAndPadConvFunctor<T, T, T, FastGemmFunctor<T, T, T>, \
-                                       BILINEAR>,                         \
+#define REGISTER_FUSED(T)                                                   \
+  REGISTER_KERNEL_BUILDER(                                                  \
+      Name("FusedResizeAndPadConv2D")                                       \
+          .Device(DEVICE_CPU)                                               \
+          .TypeConstraint<T>("T"),                                          \
+      FusedResizeConv2DUsingGemmOp<                                         \
+          T,                                                                \
+          FusedResizeAndPadConvFunctor<CPUDevice, T, T, T,                  \
+                                       FastGemmFunctor<CPUDevice, T, T, T>, \
+                                       BILINEAR>,                           \
           true>);
 
 TF_CALL_float(REGISTER_FUSED);
 
-#define REGISTER_PAD_ONLY_FUSED(T)                                        \
-  REGISTER_KERNEL_BUILDER(                                                \
-      Name("FusedPadConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),   \
-      FusedResizeConv2DUsingGemmOp<                                       \
-          T,                                                              \
-          FusedResizeAndPadConvFunctor<T, T, T, FastGemmFunctor<T, T, T>, \
-                                       NEAREST>,                          \
+#define REGISTER_PAD_ONLY_FUSED(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                                  \
+      Name("FusedPadConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
+      FusedResizeConv2DUsingGemmOp<                                         \
+          T,                                                                \
+          FusedResizeAndPadConvFunctor<CPUDevice, T, T, T,                  \
+                                       FastGemmFunctor<CPUDevice, T, T, T>, \
+                                       NEAREST>,                            \
           false>);
 
 TF_CALL_float(REGISTER_PAD_ONLY_FUSED);

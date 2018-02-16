@@ -22,6 +22,13 @@ REGISTER5(UnaryOp, CPU, "Inv", functor::inverse, float, Eigen::half, double,
 REGISTER4(UnaryOp, GPU, "Inv", functor::inverse, float, Eigen::half, double,
           int64);
 #endif
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER(UnaryOp, SYCL, "Inv", functor::inverse, int64);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "Inv", functor::inverse, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 REGISTER5(SimpleBinaryOp, CPU, "InvGrad", functor::inverse_grad, float,
           Eigen::half, double, complex64, complex128);
@@ -29,6 +36,12 @@ REGISTER5(SimpleBinaryOp, CPU, "InvGrad", functor::inverse_grad, float,
 REGISTER3(SimpleBinaryOp, GPU, "InvGrad", functor::inverse_grad, float,
           Eigen::half, double);
 #endif
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL(type) \
+  REGISTER(SimpleBinaryOp, SYCL, "InvGrad", functor::inverse_grad, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 REGISTER5(UnaryOp, CPU, "Reciprocal", functor::inverse, float, Eigen::half,
           double, complex64, complex128);
@@ -37,7 +50,11 @@ REGISTER4(UnaryOp, GPU, "Reciprocal", functor::inverse, float, Eigen::half,
           double, int64);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER(UnaryOp, SYCL, "Reciprocal", functor::inverse, float);
+REGISTER(UnaryOp, SYCL, "Reciprocal", functor::inverse, int64);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "Reciprocal", functor::inverse, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 REGISTER5(SimpleBinaryOp, CPU, "ReciprocalGrad", functor::inverse_grad, float,
@@ -47,6 +64,9 @@ REGISTER3(SimpleBinaryOp, GPU, "ReciprocalGrad", functor::inverse_grad, float,
           Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER(SimpleBinaryOp, SYCL, "ReciprocalGrad", functor::inverse_grad, float);
+#define REGISTER_SYCL(type) \
+  REGISTER(SimpleBinaryOp, SYCL, "ReciprocalGrad", functor::inverse_grad, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

@@ -47,6 +47,9 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 // Static routines not in the templated class to reduce code size
 static void SegmentReductionValidationHelper(OpKernelContext* context,
@@ -426,6 +429,73 @@ struct ProdOp {
     output *= data;
   }
 };
+
+#ifdef TENSORFLOW_USE_SYCL
+// reduction functors
+template <typename T>
+struct SumOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
+    output.device(d) += data;
+  }
+};
+
+template <typename T>
+struct MaxOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
+    output.device(d) = data.cwiseMax(output);
+  }
+};
+
+template <typename T>
+struct MinOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
+    output.device(d) = data.cwiseMin(output);
+  }
+};
+
+template <typename T>
+struct ProdOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
+    output.device(d) = output * data;
+  }
+};
+
+template <typename T, typename Index, typename InitialValueF,
+          typename ReductionF>
+struct UnsortedSegmentFunctor<SYCLDevice, T, Index, InitialValueF, ReductionF> {
+  void operator()(OpKernelContext* ctx, const Index num_segments,
+                  const TensorShape& segment_ids_shape,
+                  typename TTypes<Index>::ConstFlat segment_ids,
+                  const Index data_size, const T* data,
+                  typename TTypes<T, 2>::Tensor output) {
+    SYCLDevice d = ctx->eigen_device<SYCLDevice>();
+    output.device(d) = output.constant(T(InitialValueF()()));
+    if (data_size == 0) {
+      return;
+    }
+    const int64 N = segment_ids.dimension(0);
+    ReductionF reduction;
+    auto data_flat = typename TTypes<T, 2>::ConstTensor(data, N, data_size / N);
+    for (int64 i = 0; i < N; ++i) {
+      Index j = internal::SubtleMustCopy(segment_ids(i));
+      if (j < 0) {
+        continue;
+      }
+      OP_REQUIRES(ctx, FastBoundsCheck(j, num_segments),
+                  errors::InvalidArgument(
+                      "segment_ids", SliceDebugString(segment_ids_shape, i),
+                      " = ", j, " is out of range [0, ", num_segments, ")"));
+      reduction(d, data_flat.template chip<0>(i), output.template chip<0>(j));
+    }
+  }
+};
+#endif  // TENSORFLOW_USE_SYCL
+
+
 }  // namespace functor
 
 // Static check routines not in the templated class to reduce code size
@@ -604,6 +674,59 @@ TF_CALL_complex128(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
 #undef REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT(                                \
+    name, type, index_type, initial_value_functor, reduction_kernel_functor) \
+  REGISTER_KERNEL_BUILDER(                                                   \
+      Name(name)                                                             \
+          .Device(DEVICE_SYCL)                                               \
+          .HostMemory("num_segments")                                        \
+          .HostMemory("segment_ids")                                         \
+          .TypeConstraint<type>("T")                                         \
+          .TypeConstraint<index_type>("Tindices"),                           \
+      UnsortedSegmentReductionOp<                                            \
+          type, index_type,                                                  \
+          functor::UnsortedSegmentFunctor<SYCLDevice, type, index_type,      \
+                                          initial_value_functor,             \
+                                          reduction_kernel_functor> >)
+
+// sum is the only op that supports all input types currently
+#define REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, index_type)                  \
+  REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMax", type, index_type, \
+                                      functor::Lowest<type>,                   \
+                                      functor::MaxOpSycl<type>);               \
+  REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMin", type, index_type, \
+                                      functor::Highest<type>,                  \
+                                      functor::MinOpSycl<type>);               \
+  REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentProd", type, index_type,\
+                                      functor::One<type>,                      \
+                                      functor::ProdOpSycl<type>);
+
+#define REGISTER_SUM_SYCL_UNSORTED_KERNELS(type, index_type)                  \
+  REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentSum", type, index_type,\
+                                      functor::Zero<type>,                    \
+                                      functor::SumOpSycl<type>);
+
+#define REGISTER_REAL_SYCL_UNSORTED_KERNELS_ALL(type) \
+  REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, int32);   \
+  REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, int64);
+
+#define REGISTER_SUM_SYCL_UNSORTED_KERNELS_ALL(type) \
+  REGISTER_SUM_SYCL_UNSORTED_KERNELS(type, int32);   \
+  REGISTER_SUM_SYCL_UNSORTED_KERNELS(type, int64);
+
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_REAL_SYCL_UNSORTED_KERNELS_ALL);
+TF_CALL_int32(REGISTER_REAL_SYCL_UNSORTED_KERNELS_ALL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SUM_SYCL_UNSORTED_KERNELS_ALL);
+TF_CALL_int32(REGISTER_SUM_SYCL_UNSORTED_KERNELS_ALL);
+
+#undef REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT
+#undef REGISTER_REAL_SYCL_UNSORTED_KERNELS
+#undef REGISTER_SUM_SYCL_UNSORTED_KERNELS
+#undef REGISTER_REAL_SYCL_UNSORTED_KERNELS_ALL
+#undef REGISTER_SUM_SYCL_UNSORTED_KERNELS_ALL
+#endif  // TENSORFLOW_USE_SYCL
 
 // ____________________________________________________________________________
 // Sparse segment reduction ops.

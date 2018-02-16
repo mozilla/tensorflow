@@ -128,13 +128,14 @@ Status ProcessFunctionLibraryRuntime::GetDeviceContext(
   Device* device = flr->device();
   string device_type = device->parsed_name().type;
   if (device_type == "CPU") return Status::OK();
-  if (device_type == "GPU") {
+  if (device_type == "GPU" || device_type == "SYCL") {
     auto* dev_info = flr->device()->tensorflow_gpu_device_info();
     if (dev_info) {
       *device_context = dev_info->default_context;
       return Status::OK();
     }
   }
+
   return errors::Internal("Device type: ", device_type,
                           " is currently unsupported for remote ",
                           "function executions");

@@ -44,12 +44,12 @@ REGISTER_KERNEL_BUILDER(Name("AddV2")
                         BinaryOp<CPUDevice, functor::add<int32>>);
 #endif
 
-#if TENSORFLOW_USE_SYCL
-#define REGISTER_KERNEL(type)                          \
-  REGISTER(BinaryOp, SYCL, "Add", functor::add, type); \
-  REEGISTER(BinaryOp, SYCL, "AddV2", functor::add, type);
-
-TF_CALL_SYCL_NUMBER_TYPES(REGISTER_KERNEL);
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL(type)                           \
+  REGISTER(BinaryOp, SYCL, "Add", functor::add, type) \
+  REGISTER(BinaryOp, SYCL, "AddV2", functor::add, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 
 REGISTER_KERNEL_BUILDER(Name("Add")
                             .Device(DEVICE_SYCL)

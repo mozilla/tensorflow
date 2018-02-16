@@ -122,6 +122,14 @@ class TensorListStack : public OpKernel {
       return;
     }
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+    if (std::is_same<Device, Eigen::SyclDevice>::value) {
+      ConcatSYCL<T>(c->eigen_sycl_device(), inputs_flat, output, &output_flat);
+      return;
+    }
+#endif // TENSORFLOW_USE_SYCL
+
     ConcatCPU<T>(c->device(), inputs_flat, &output_flat);
   }
 

@@ -24,7 +24,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 
 #if (defined(GEMMLOWP_NEON_32) || defined(GEMMLOWP_NEON_64)) && \
-    !defined(TENSORFLOW_DISABLE_META) && !defined(__APPLE__)
+    !defined(TENSORFLOW_DISABLE_META) && !defined(__APPLE__) && !defined(TENSORFLOW_USE_SYCL)
 #define TENSORFLOW_USE_META (1)
 #endif
 

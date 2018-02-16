@@ -51,7 +51,7 @@ class SYCLAllocator : public Allocator {
   // Get the size of the corresponding SYCL buffer.
   // Implementing this also provides an implementation of
   // AllocatedSize(void* ptr) by default.
-  size_t RequestedSize(void* ptr) override;
+  size_t RequestedSize(const void* ptr) override;
   Eigen::SyclDevice* getSyclDevice() { return sycl_device_; }
   // Clear the SYCL device used by the Allocator
   void ClearSYCLDevice() {

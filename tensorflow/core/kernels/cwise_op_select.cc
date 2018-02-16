@@ -180,9 +180,8 @@ REGISTER_SELECT_GPU(complex128);
       Name("Select").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       SelectOp<SYCLDevice, type>);
 
-REGISTER_SELECT_SYCL(float);
-REGISTER_SELECT_SYCL(double);
-REGISTER_SELECT_SYCL(int32);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SELECT_SYCL);
+TF_CALL_int32(REGISTER_SELECT_SYCL);
 REGISTER_SELECT_SYCL(int64);
 #undef REGISTER_SELECT_SYCL
 #endif  // TENSORFLOW_USE_SYCL
@@ -223,8 +222,24 @@ struct SelectScalarFunctor<CPUDevice, T>
     : SelectScalarFunctorBase<CPUDevice, T> {};
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T>
-struct SelectScalarFunctor<SYCLDevice, T>
-    : SelectScalarFunctorBase<SYCLDevice, T> {};
+struct SelectScalarFunctor<SYCLDevice, T> {
+  void operator()(const SYCLDevice& d, typename TTypes<T>::Flat out,
+                  TTypes<bool>::ConstScalar cond,
+                  typename TTypes<T>::ConstFlat then_flat,
+                  typename TTypes<T>::ConstFlat else_flat) {
+#if !defined(EIGEN_HAS_INDEX_LIST)
+    Eigen::array<int, 1> rank1{1};
+#else
+    Eigen::IndexList<Eigen::type2index<1> > rank1;
+#endif
+    const int size = then_flat.dimension(0);
+    Eigen::array<int, 1> broadcast_dims{size};
+
+    To32Bit(out).device(d) = cond.reshape(rank1)
+                                 .broadcast(broadcast_dims)
+                                 .select(then_flat, else_flat);
+  }
+};
 #endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T>

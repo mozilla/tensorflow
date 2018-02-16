@@ -117,8 +117,8 @@ void GdrWorker::GrpcRecvTensorAsync(CallOptions* opts,
           } else {
             // Non-DMA cases.
             if (src_dev->tensorflow_gpu_device_info() && (!on_host)) {
-#if GOOGLE_CUDA
-              const DeviceContext* send_dev_context = send_args.device_context;
+#if GOOGLE_CUDA || TENSORFLOW_USE_SYCL
+              DeviceContext* send_dev_context = send_args.device_context;
               AllocatorAttributes alloc_attrs;
               alloc_attrs.set_gpu_compatible(true);
               alloc_attrs.set_on_host(true);
@@ -127,7 +127,8 @@ void GdrWorker::GrpcRecvTensorAsync(CallOptions* opts,
               CHECK(send_dev_context)
                   << "send dev name: " << src_dev->name()
                   << " gpu_info: " << src_dev->tensorflow_gpu_device_info();
-              // "val" is on a GPU. Uses GPUUtil to fill the response proto.
+              // "val" is on a GPU/SYCL. Uses CopyDeviceTensorToCPU to fill the
+              // response proto.
               StatusCallback copy_ready = [response, done, copy,
                                            is_dead](const Status& s) {
                 // The value is now ready to be returned on the wire.
@@ -135,9 +136,8 @@ void GdrWorker::GrpcRecvTensorAsync(CallOptions* opts,
                 done(s);
                 delete copy;
               };
-
-              GPUUtil::CopyGPUTensorToCPU(src_dev, send_dev_context, &val, copy,
-                                          copy_ready);
+              send_dev_context->CopyDeviceTensorToCPU(&val,
+                "IGNORE_MY_TENSOR_NAME", src_dev , copy, copy_ready);
 #else
               done(errors::Internal("No GPU device in process"));
 #endif  // GOOGLE_CUDA

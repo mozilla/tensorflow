@@ -22,6 +22,9 @@ REGISTER5(UnaryOp, CPU, "Expm1", functor::expm1, float, Eigen::half, double,
 REGISTER3(UnaryOp, GPU, "Expm1", functor::expm1, float, Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "Expm1", functor::expm1, float, double);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "Expm1", functor::expm1, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

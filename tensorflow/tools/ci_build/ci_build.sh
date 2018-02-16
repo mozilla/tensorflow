@@ -103,6 +103,10 @@ if [[ "${CONTAINER_TYPE}" != "gpu" ]]; then
   GPU_EXTRA_PARAMS=""
 fi
 
+if [[ "${CONTAINER_TYPE}" == "sycl" ]]; then
+  GPU_EXTRA_PARAMS="--device /dev/dri:/dev/dri"
+fi
+
 # Determine the docker image name
 DOCKER_IMG_NAME="${BUILD_TAG}.${CONTAINER_TYPE}"
 

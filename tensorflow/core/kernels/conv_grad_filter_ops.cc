@@ -17,6 +17,7 @@ limitations under the License.
 
 #define USE_EIGEN_TENSOR
 #define EIGEN_USE_THREADS
+#define TF_USE_SYCLDNN
 
 #include "tensorflow/core/kernels/conv_grad_ops.h"
 
@@ -48,6 +49,10 @@ limitations under the License.
 #include "tensorflow/core/kernels/conv_ops_gpu.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
+
+#if defined(TF_USE_SYCLDNN) && defined(TENSORFLOW_USE_SYCL)
+#include "tensorflow/core/kernels/conv_ops_sycl.h"
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace {
 
@@ -91,6 +96,9 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename T>
 struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
@@ -104,6 +112,22 @@ struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
         out_backprop.tensor<T, 4>(), row_stride, col_stride);
   }
 };
+
+#ifdef TF_USE_SYCLEIGEN
+template <typename T>
+struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
+  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
+                  const Tensor& out_backprop, const Tensor& input,
+                  int row_stride, int col_stride, const Padding& padding,
+                  Tensor* filter_backprop, TensorFormat data_format) {
+    const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
+    functor::SpatialConvolutionBackwardKernel<SYCLDevice, T>()(
+        d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
+        out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
+        filter_backprop->dim_size(1), row_stride, col_stride);
+  }
+};
+#endif  // TENSORFLOW_USE_SYCL
 
 #ifdef TENSORFLOW_USE_LIBXSMM
 template <typename Device, class T>
@@ -531,6 +555,8 @@ typedef AutoTuneSingleton<ConvBackwardFilterAutoTuneGroup, ConvParameters,
                           perftools::gputools::dnn::AlgorithmConfig>
     AutoTuneConvBwdFilter;
 
+#endif  // GOOGLE_CUDA
+#if GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
 // Backprop for filter.
 template <typename Device, class T>
 class Conv2DSlowBackpropFilterOp : public OpKernel {
@@ -626,6 +652,8 @@ class Conv2DSlowBackpropFilterOp : public OpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(Conv2DSlowBackpropFilterOp);
 };
 
+#endif  // GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
+#if GOOGLE_CUDA
 template <typename T>
 void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
@@ -1030,5 +1058,18 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                             .HostMemory("filter_sizes"),
                         Conv2DSlowBackpropFilterOp<GPUDevice, Eigen::half>);
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNELS(T)                           \
+  REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")     \
+                              .Device(DEVICE_SYCL)         \
+                              .TypeConstraint<T>("T")      \
+                              .HostMemory("filter_sizes"), \
+                          Conv2DSlowBackpropFilterOp<SYCLDevice, T>);
+
+//TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+TF_CALL_float(REGISTER_SYCL_KERNELS)
+#undef REGISTER_SYCL_KERNELS
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow

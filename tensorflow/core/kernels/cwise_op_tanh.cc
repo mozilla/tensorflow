@@ -25,7 +25,9 @@ REGISTER3(UnaryOp, GPU, "Tanh", functor::tanh, float, Eigen::half, double);
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "Tanh", functor::tanh, float, double);
+#define REGISTER_SYCL(type) REGISTER(UnaryOp, SYCL, "Tanh", functor::tanh, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 REGISTER5(SimpleBinaryOp, CPU, "TanhGrad", functor::tanh_grad, float,
@@ -34,4 +36,11 @@ REGISTER5(SimpleBinaryOp, CPU, "TanhGrad", functor::tanh_grad, float,
 REGISTER3(SimpleBinaryOp, GPU, "TanhGrad", functor::tanh_grad, float,
           Eigen::half, double);
 #endif
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL(type) \
+  REGISTER(SimpleBinaryOp, SYCL, "TanhGrad", functor::tanh_grad, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

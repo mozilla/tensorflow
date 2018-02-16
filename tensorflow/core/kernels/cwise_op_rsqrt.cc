@@ -23,7 +23,10 @@ REGISTER5(UnaryOp, CPU, "Rsqrt", functor::rsqrt, float, Eigen::half, double,
 REGISTER3(UnaryOp, GPU, "Rsqrt", functor::rsqrt, float, Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "Rsqrt", functor::rsqrt, float, double);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "Rsqrt", functor::rsqrt, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 
 REGISTER5(SimpleBinaryOp, CPU, "RsqrtGrad", functor::rsqrt_grad, float,
@@ -33,7 +36,9 @@ REGISTER3(SimpleBinaryOp, GPU, "RsqrtGrad", functor::rsqrt_grad, float,
           Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(SimpleBinaryOp, SYCL, "RsqrtGrad", functor::rsqrt_grad, float,
-          double);
+#define REGISTER_SYCL(type) \
+  REGISTER(SimpleBinaryOp, SYCL, "RsqrtGrad", functor::rsqrt_grad, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  //  TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

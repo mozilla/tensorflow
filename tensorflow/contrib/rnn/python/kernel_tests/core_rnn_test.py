@@ -1201,12 +1201,12 @@ class LSTMTest(test.TestCase):
 
     self.assertEqual(len(values_static), len(values_dynamic))
     for (value_static, value_dynamic) in zip(values_static, values_dynamic):
-      self.assertAllEqual(value_static, value_dynamic)
-    self.assertAllEqual(state_value_static, state_value_dynamic)
+      self.assertAllClose(value_static, value_dynamic)
+    self.assertAllClose(state_value_static, state_value_dynamic)
 
     if in_graph_mode:
 
-      self.assertAllEqual(static_grad_values, dynamic_grad_values)
+      self.assertAllClose(static_grad_values, dynamic_grad_values)
 
       self.assertEqual(
           len(static_individual_grad_values),
@@ -1218,14 +1218,14 @@ class LSTMTest(test.TestCase):
       for i, (a, b) in enumerate(
           zip(static_individual_grad_values, dynamic_individual_grad_values)):
         tf_logging.info("Comparing individual gradients iteration %d" % i)
-        self.assertAllEqual(a, b)
+        self.assertAllClose(a, b)
 
       for i, (a, b) in enumerate(
           zip(static_individual_var_grad_values,
               dynamic_individual_var_grad_values)):
         tf_logging.info(
             "Comparing individual variable gradients iteration %d" % i)
-        self.assertAllEqual(a, b)
+        self.assertAllClose(a, b)
 
   @test_util.run_in_graph_and_eager_modes()
   def testDynamicEquivalentToStaticRNN(self):
@@ -2279,13 +2279,14 @@ class TensorArrayOnCorrectDeviceTest(test.TestCase):
     return run_metadata
 
   def _retrieve_cpu_gpu_stats(self, run_metadata):
+    gpu_dev = test_util.gpu_device_type()
     cpu_stats = None
     gpu_stats = None
     step_stats = run_metadata.step_stats
     for ds in step_stats.dev_stats:
       if "cpu:0" in ds.device[-5:].lower():
         cpu_stats = ds.node_stats
-      if "gpu:0" == ds.device[-5:].lower():
+      if gpu_dev.lower() in ds.device.lower():
         gpu_stats = ds.node_stats
     return cpu_stats, gpu_stats
 

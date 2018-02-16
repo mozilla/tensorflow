@@ -1083,8 +1083,8 @@ class StreamingPrecisionTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertAlmostEqual(1, sess.run(update_op))
-      self.assertAlmostEqual(1, precision.eval())
+      self.assertAlmostEqual(1.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(1.0, precision.eval(), 6)
 
   def testSomeCorrect(self):
     predictions = constant_op.constant([1, 0, 1, 0], shape=(1, 4))
@@ -1249,7 +1249,7 @@ class StreamingRecallTest(test.TestCase):
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
       sess.run(update_op)
-      self.assertEqual(1, recall.eval())
+      self.assertAlmostEqual(1, recall.eval(), 6)
 
   def testSomeCorrect(self):
     predictions = constant_op.constant([1, 0, 1, 0], shape=(1, 4))
@@ -1424,7 +1424,7 @@ class StreamingFPRTest(test.TestCase):
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
       sess.run(update_op)
-      self.assertEqual(1, fpr.eval())
+      self.assertAlmostEqual(1.0, fpr.eval(), 6)
 
   def testZeroFalsePositivesAndTrueNegativesGivesZeroFPR(self):
     predictions = array_ops.ones((1, 4))
@@ -1547,7 +1547,7 @@ class StreamingFNRTest(test.TestCase):
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
       sess.run(update_op)
-      self.assertEqual(1, fnr.eval())
+      self.assertAlmostEqual(1.0, fnr.eval(), 6)
 
   def testZeroFalseNegativesAndTruePositivesGivesZeroFNR(self):
     predictions = array_ops.zeros((1, 4))
@@ -2356,8 +2356,8 @@ class StreamingSpecificityAtSensitivityTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertEqual(1, sess.run(update_op))
-      self.assertEqual(1, specificity.eval())
+      self.assertAlmostEqual(1.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(1.0, specificity.eval(), 6)
 
   def testSomeCorrectHighSensitivity(self):
     predictions_values = [0.1, 0.2, 0.4, 0.3, 0.0, 0.1, 0.45, 0.5, 0.8, 0.9]
@@ -2492,8 +2492,8 @@ class StreamingSensitivityAtSpecificityTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertEqual(1, sess.run(update_op))
-      self.assertEqual(1, specificity.eval())
+      self.assertAlmostEqual(1.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(1.0, specificity.eval(), 6)
 
   def testSomeCorrectHighSpecificity(self):
     predictions_values = [0.0, 0.1, 0.2, 0.3, 0.4, 0.1, 0.45, 0.5, 0.8, 0.9]
@@ -3128,8 +3128,8 @@ class RecallAtPrecisionTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertEqual(1, sess.run(update_op))
-      self.assertEqual(1, recall.eval())
+      self.assertAlmostEqual(1.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(1.0, recall.eval(), 6)
 
   def testSomeCorrectHighPrecision(self):
     predictions_values = [1, .9, .8, .7, .6, .5, .4, .3]
@@ -5118,8 +5118,8 @@ class StreamingMeanSquaredErrorTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertEqual(6, sess.run(update_op))
-      self.assertEqual(6, error.eval())
+      self.assertAlmostEqual(6.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(6.0, error.eval(), 6)
 
   def testSingleUpdateWithErrorAndWeights(self):
     predictions = constant_op.constant(
@@ -5790,8 +5790,8 @@ class StreamingMeanCosineDistanceTest(test.TestCase):
 
     with self.test_session() as sess:
       sess.run(variables.local_variables_initializer())
-      self.assertEqual(0, sess.run(update_op))
-      self.assertEqual(0, error.eval())
+      self.assertAlmostEqual(0.0, sess.run(update_op), 6)
+      self.assertAlmostEqual(0.0, error.eval(), 6)
 
   def testSingleUpdateWithError1(self):
     np_labels = np.matrix(('1 0 0;' '0 0 1;' '0 1 0'))

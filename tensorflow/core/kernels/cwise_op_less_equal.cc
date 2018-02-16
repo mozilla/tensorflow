@@ -35,8 +35,12 @@ REGISTER_KERNEL_BUILDER(Name("LessEqual")
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER6(BinaryOp, SYCL, "LessEqual", functor::less_equal, float, double,
-          int64, uint8, int8, int16);
+#define REGISTER_SYCL(type) \
+  REGISTER(BinaryOp, SYCL, "LessEqual", functor::less_equal, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+REGISTER4(BinaryOp, SYCL, "LessEqual", functor::less_equal, int64, uint8, int8,
+          int16);
 REGISTER_KERNEL_BUILDER(Name("LessEqual")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")

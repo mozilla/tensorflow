@@ -30,6 +30,7 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
+from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
@@ -529,13 +530,14 @@ class RNNCellTest(test.TestCase):
       self.assertTrue("cpu:14159" in outputs.device.lower())
 
   def _retrieve_cpu_gpu_stats(self, run_metadata):
+    gpu_dev = test_util.gpu_device_type()
     cpu_stats = None
     gpu_stats = None
     step_stats = run_metadata.step_stats
     for ds in step_stats.dev_stats:
       if "cpu:0" in ds.device[-5:].lower():
         cpu_stats = ds.node_stats
-      if "gpu:0" == ds.device[-5:].lower():
+      if gpu_dev.lower() in ds.device.lower():
         gpu_stats = ds.node_stats
     return cpu_stats, gpu_stats
 

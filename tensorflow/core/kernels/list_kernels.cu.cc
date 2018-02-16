@@ -13,10 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#if GOOGLE_CUDA
+
 #include <limits>
 
 #define EIGEN_USE_THREADS
-#if GOOGLE_CUDA
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/kernels/list_kernels.h"

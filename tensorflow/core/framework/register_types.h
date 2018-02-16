@@ -213,10 +213,17 @@ limitations under the License.
 #define TF_CALL_SYCL_double(m) TF_CALL_double(m)
 #endif  // TENSORFLOW_SYCL_NO_DOUBLE
 
+#ifdef TENSORFLOW_SYCL_NO_HALF
+#define TF_CALL_SYCL_half(m)
+#else  // TENSORFLOW_SYCL_NO_HALF
+#define TF_CALL_SYCL_half(m) TF_CALL_half(m)
+#endif  // TENSORFLOW_SYCL_NO_HALF
+
 #ifdef __ANDROID_TYPES_SLIM__
 #define TF_CALL_SYCL_NUMBER_TYPES(m) TF_CALL_float(m)
 #else  // __ANDROID_TYPES_SLIM__
-#define TF_CALL_SYCL_NUMBER_TYPES(m) TF_CALL_float(m) TF_CALL_SYCL_double(m)
+#define TF_CALL_SYCL_NUMBER_TYPES(m) TF_CALL_float(m) TF_CALL_SYCL_double(m) \
+  TF_CALL_SYCL_half(m)
 #endif  // __ANDROID_TYPES_SLIM__
 
 #endif  // TENSORFLOW_FRAMEWORK_REGISTER_TYPES_H_

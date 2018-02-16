@@ -38,12 +38,15 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace functor {
 
-template <typename T>
+template <typename Device, typename T>
 void LSTMBlockCellFpropWithEigen(
-    const LSTMBlockCell& cell, OpKernelContext* ctx, const CPUDevice& d,
+    const LSTMBlockCell& cell, OpKernelContext* ctx, const Device& d,
     const T forget_bias, const T cell_clip, bool use_peephole,
     typename TTypes<T>::ConstMatrix x, typename TTypes<T>::ConstMatrix cs_prev,
     typename TTypes<T>::ConstMatrix h_prev, typename TTypes<T>::ConstMatrix w,
@@ -60,7 +63,7 @@ void LSTMBlockCellFpropWithEigen(
 
   // states1 = xh * w + b
   typename TTypes<T>::ConstMatrix const_xh(xh.data(), xh.dimensions());
-  TensorBlasGemm<CPUDevice, T, false /* USE_CUBLAS */>::compute(
+  TensorBlasGemm<Device, T, false /* USE_CUBLAS */>::compute(
       ctx, d, false, false, T(1), const_xh, w, T(0), icfo);
   Eigen::array<Eigen::DenseIndex, 2> b_shape({1, b.dimensions()[0]});
   Eigen::array<Eigen::DenseIndex, 2> broadcast_shape({cell.batch_size(), 1});
@@ -177,10 +180,10 @@ void LSTMBlockCellBpropWithEigen(
   }
 }
 
-#define DEFINE_CPU_SPECS(T)                                                    \
+#define DEFINE_SPECS(DEVICE, T)                                                \
   template <>                                                                  \
-  void LSTMBlockCellFprop<CPUDevice, T, false /* USE_CUBLAS */>::operator()(   \
-      OpKernelContext* ctx, const CPUDevice& d, const T forget_bias,           \
+  void LSTMBlockCellFprop<DEVICE, T, false /* USE_CUBLAS */>::operator()(      \
+      OpKernelContext* ctx, const DEVICE& d, const T forget_bias,              \
       const T cell_clip, bool use_peephole, typename TTypes<T>::ConstMatrix x, \
       typename TTypes<T>::ConstMatrix cs_prev,                                 \
       typename TTypes<T>::ConstMatrix h_prev,                                  \
@@ -191,13 +194,13 @@ void LSTMBlockCellBpropWithEigen(
       typename TTypes<T>::Matrix f, typename TTypes<T>::Matrix o,              \
       typename TTypes<T>::Matrix ci, typename TTypes<T>::Matrix co,            \
       typename TTypes<T>::Matrix icfo, typename TTypes<T>::Matrix h) {         \
-    LSTMBlockCellFpropWithEigen<T>(                                            \
+    LSTMBlockCellFpropWithEigen<DEVICE, T>(                                    \
         *this, ctx, d, forget_bias, cell_clip, use_peephole, x, cs_prev,       \
         h_prev, w, wci, wcf, wco, b, xh, i, cs, f, o, ci, co, icfo, h);        \
   }                                                                            \
   template <>                                                                  \
-  void LSTMBlockCellBprop<CPUDevice, T, false /* USE_CUBLAS */>::operator()(   \
-      OpKernelContext* ctx, const CPUDevice& d, bool use_peephole,             \
+  void LSTMBlockCellBprop<DEVICE, T, false /* USE_CUBLAS */>::operator()(      \
+      OpKernelContext* ctx, const DEVICE& d, bool use_peephole,                \
       typename TTypes<T>::ConstMatrix x,                                       \
       typename TTypes<T>::ConstMatrix cs_prev,                                 \
       typename TTypes<T>::ConstMatrix h_prev,                                  \
@@ -215,16 +218,19 @@ void LSTMBlockCellBpropWithEigen(
       typename TTypes<T>::Matrix cs_prev_grad,                                 \
       typename TTypes<T>::Vec wci_grad, typename TTypes<T>::Vec wcf_grad,      \
       typename TTypes<T>::Vec wco_grad) {                                      \
-    LSTMBlockCellBpropWithEigen<CPUDevice, T, false /* USE_CUBLAS */>(         \
+    LSTMBlockCellBpropWithEigen<DEVICE, T, false /* USE_CUBLAS */>(            \
         *this, ctx, d, use_peephole, x, cs_prev, h_prev, w, wci, wcf, wco, b,  \
         i, cs, f, o, ci, co, cs_grad, h_grad, do_, dcs, dci, df, di, dicfo,    \
         cs_prev_grad, wci_grad, wcf_grad, wco_grad);                           \
   }                                                                            \
-  template struct LSTMBlockCellFprop<CPUDevice, T, false /* USE_CUBLAS */>;    \
-  template struct LSTMBlockCellBprop<CPUDevice, T, false /* USE_CUBLAS */>;
+  template struct LSTMBlockCellFprop<DEVICE, T, false /* USE_CUBLAS */>;       \
+  template struct LSTMBlockCellBprop<DEVICE, T, false /* USE_CUBLAS */>;
 
-DEFINE_CPU_SPECS(float);
-#undef DEFINE_CPU_SPECS
+DEFINE_SPECS(CPUDevice, float);
+#ifdef TENSORFLOW_USE_SYCL
+DEFINE_SPECS(SYCLDevice, float);
+#endif  // TENSORFLOW_USE_SYCL
+#undef DEFINE_SPECS
 
 }  // namespace functor
 
@@ -374,6 +380,16 @@ class LSTMBlockCellOp : public OpKernel {
 REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                              \
+  REGISTER_KERNEL_BUILDER(                                              \
+      Name("LSTMBlockCell").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      LSTMBlockCellOp<SYCLDevice, T, false>);
+REGISTER_KERNEL(float);
+// REGISTER_KERNEL(double);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
 namespace functor {
@@ -659,6 +675,16 @@ class LSTMBlockCellGradOp : public OpKernel {
 REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                                  \
+  REGISTER_KERNEL_BUILDER(                                                  \
+      Name("LSTMBlockCellGrad").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      LSTMBlockCellGradOp<SYCLDevice, T, false>);
+REGISTER_KERNEL(float);
+// REGISTER_KERNEL(double);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
 namespace functor {
@@ -1005,6 +1031,18 @@ REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                          \
+  REGISTER_KERNEL_BUILDER(Name("BlockLSTM")                         \
+                              .Device(DEVICE_SYCL)                  \
+                              .HostMemory("seq_len_max")            \
+                              .TypeConstraint<T>("T"),              \
+                          BlockLSTMOp<SYCLDevice, T, false>);
+REGISTER_KERNEL(float);
+// REGISTER_KERNEL(double);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
+
 #if GOOGLE_CUDA
 namespace functor {
 #define DECLARE_GPU_SPEC(T)                                              \
@@ -1278,6 +1316,18 @@ class BlockLSTMGradOp : public OpKernel {
 REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                            \
+  REGISTER_KERNEL_BUILDER(Name("BlockLSTMGrad")                       \
+                            .Device(DEVICE_SYCL)                      \
+                            .HostMemory("seq_len_max")                \
+                            .TypeConstraint<T>("T"),                  \
+                          BlockLSTMGradOp<SYCLDevice, T, false>);
+REGISTER_KERNEL(float);
+// REGISTER_KERNEL(double);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
 namespace functor {

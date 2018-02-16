@@ -165,7 +165,7 @@ class GradientsTest(test_util.TensorFlowTestCase):
     with ops.Graph().as_default() as g:
       w = constant(1.0, shape=[1, 1])
       x = constant(1.0, shape=[1, 2])
-      with g.device("/device:GPU:0"):
+      with g.device(test_util.gpu_device_name()):
         wx = math_ops.matmul(w, x)
       gw = gradients.gradients(wx, [w], colocate_gradients_with_ops=True)[0]
     self.assertEqual(gw.op.colocation_groups(), wx.op.colocation_groups())
@@ -214,7 +214,7 @@ class GradientsTest(test_util.TensorFlowTestCase):
         x = constant(1.0, shape=[1, 1])
         y = constant(1.0, shape=[1, 1])
         s = x + y
-      with g.device("/device:GPU:0"):
+      with g.device(test_util.gpu_device_name()):
         z = math_ops.reduce_sum(s)
 
       gz_x = gradients.gradients(z, [x], colocate_gradients_with_ops=True,

@@ -3228,7 +3228,10 @@ tf_kernel_library(
     name = "depthwise_conv_grad_op",
     hdrs = [
         "depthwise_conv_op.h",
-    ],
+    ] + if_sycl([
+        "depthwise_conv_op_sycl.h",
+        "conv_ops_sycl_common.h",
+    ]),
     prefix = "depthwise_conv_grad_op",
     deps = [
         ":bounds_check",
@@ -3477,7 +3480,10 @@ tf_kernel_library(
         "maxpooling_op.h",
         "pooling_ops_3d.h",
         "pooling_ops_common.h",
-    ] + if_sycl(["pooling_ops_3d_sycl.h"]),
+    ] + if_sycl([
+        "pooling_ops_3d_sycl.h",
+        "maxpooling_op_sycl.h",
+    ]),
     gpu_srcs = [
         "avgpooling_op.h",
         "avgpooling_op_gpu.cu.cc",
@@ -6099,7 +6105,7 @@ cc_library(
         "cwise_ops_gradients.h",
         "meta_support.h",
         "quantization_utils.h",
-    ],
+    ] + if_sycl(["cwise_ops_sycl_common.h"]),
     deps = [
         ":bounds_check",
         "//tensorflow/core:framework",

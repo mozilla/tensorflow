@@ -66,6 +66,17 @@ struct Im2ColBufferResource : public ResourceBase {
   string DebugString() { return "Im2ColBufferResource"; }
 };
 
+template <class Device, class T, size_t size>
+struct Im2ColBufferResourceSYCL : public ResourceBase {
+  Im2ColBufferResourceSYCL<Device, T, size>(Device& d) {
+    data = static_cast<T*>(d.allocate_temp(size * sizeof(T)));
+  }
+  mutex mu;
+  T* data;
+  string DebugString() { return "Im2ColBufferResourceSYCL"; }
+};
+
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_KERNELS_CONV_OPS_H

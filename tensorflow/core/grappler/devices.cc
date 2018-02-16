@@ -48,6 +48,10 @@ int GetNumAvailableGPUs() {
     }
   }
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+  num_eligible_gpus = 1;
+#endif  // TENSORFLOW_USE_SYCL
   LOG(INFO) << "Number of eligible GPUs (core count >= 8): "
             << num_eligible_gpus;
   return num_eligible_gpus;
@@ -64,6 +68,8 @@ int64 AvailableGPUMemory(int gpu_id) {
   CHECK(se->DeviceMemoryUsage(&available_memory, &total_memory));
 
   return available_memory;
+#elif TENSORFLOW_USE_SYCL
+  return 1024 * 1024;
 #else
   return 0;
 #endif

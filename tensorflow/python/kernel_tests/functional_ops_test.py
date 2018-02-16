@@ -540,6 +540,7 @@ class FunctionalOpsTest(test.TestCase):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
 
+    gpu_target = "/job:localhost/replica:0/task:0"+test_util.gpu_device_name()
     @function.Defun(dtypes.float32, dtypes.float32)
     def _remote_fn(a, b):
       return math_ops.multiply(a, b)
@@ -553,7 +554,7 @@ class FunctionalOpsTest(test.TestCase):
           args=[a, b],
           Tout=[dtypes.float32],
           f=_remote_fn,
-          target="/job:localhost/replica:0/task:0/device:GPU:0")[0] + 3.0
+          target=gpu_target)[0] + 3.0
 
     with self.test_session() as sess:
       sess.run(variables.global_variables_initializer())
@@ -564,15 +565,16 @@ class FunctionalOpsTest(test.TestCase):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
 
+    gpu_target = "/job:localhost/replica:0/task:0"+test_util.gpu_device_name()
     @function.Defun(dtypes.float32, dtypes.float32)
     def _remote_fn(a, b):
       return math_ops.multiply(a, b)
 
-    with ops.device("/job:localhost/replica:0/task:0/device:GPU:0"):
+    with ops.device(gpu_target):
       a = variables.Variable(2, dtype=dtypes.float32)
       b = variables.Variable(3, dtype=dtypes.float32)
 
-    with ops.device("/job:localhost/replica:0/task:0/device:GPU:0"):
+    with ops.device(gpu_target):
       remote_op = functional_ops.remote_call(
           args=[a, b],
           Tout=[dtypes.float32],

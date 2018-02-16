@@ -34,7 +34,11 @@ REGISTER_KERNEL_BUILDER(Name("Less")
                         BinaryOp<CPUDevice, functor::less<int32>>);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER3(BinaryOp, SYCL, "Less", functor::less, float, double, int64);
+#define REGISTER_SYCL(type) \
+  REGISTER(BinaryOp, SYCL, "Less", functor::less, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
+REGISTER4(BinaryOp, SYCL, "Less", functor::less, int64, uint8, int8, int16);
 REGISTER_KERNEL_BUILDER(Name("Less")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")

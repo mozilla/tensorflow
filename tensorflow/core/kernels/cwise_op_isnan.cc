@@ -23,6 +23,9 @@ REGISTER3(UnaryOp, GPU, "IsNan", functor::isnan, float, Eigen::half, double);
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER2(UnaryOp, SYCL, "IsNan", functor::isnan, float, double);
+#define REGISTER_SYCL(type) \
+  REGISTER(UnaryOp, SYCL, "IsNan", functor::isnan, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

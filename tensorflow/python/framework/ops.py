@@ -38,6 +38,7 @@ from tensorflow.core.framework import op_def_pb2
 from tensorflow.core.framework import versions_pb2
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python import pywrap_tensorflow as c_api
+from tensorflow.python.client import device_lib
 from tensorflow.python.eager import context
 from tensorflow.python.eager import core
 from tensorflow.python.eager import tape
@@ -812,7 +813,8 @@ class _EagerTensorBase(Tensor):
       A GPU-memory backed Tensor object initialized with the same contents
       as this Tensor.
     """
-    return self._copy(context.context(), "GPU:" + str(gpu_index))
+    return self._copy(
+        context.context(), str(device_lib.gpu_device_type() + ":" + str(gpu_index)))
 
   def __bool__(self):
     if self._shape_tuple() != ():  # pylint: disable=g-explicit-bool-comparison

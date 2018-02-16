@@ -36,27 +36,17 @@ class GSYCLInterface {
     bool found_device = false;
     auto device_list = Eigen::get_sycl_supported_devices();
     // Obtain list of supported devices from Eigen
-    for (const auto& device : device_list) {
-      if (device.is_gpu()) {
-        // returns first found GPU
-        AddDevice(device);
-        found_device = true;
-      }
-    }
+
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device& d) { return d.is_accelerator(); });
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device& d) { return d.is_gpu(); });
 
     if (!found_device) {
       // Currently Intel GPU is not supported
-      LOG(WARNING) << "No OpenCL GPU found that is supported by "
-                   << "ComputeCpp/triSYCL, trying OpenCL CPU";
+      LOG(WARNING) << "No OpenCL accelerator nor GPU found that is supported by "
+                      "ComputeCpp/triSYCL trying OpenCL CPU";
     }
 
-    for (const auto& device : device_list) {
-      if (device.is_cpu()) {
-        // returns first found CPU
-        AddDevice(device);
-        found_device = true;
-      }
-    }
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device d) { return d.is_cpu(); });
 
     if (!found_device) {
       LOG(WARNING) << "No OpenCL CPU found that is supported by "
@@ -74,8 +64,8 @@ class GSYCLInterface {
 
     if (!found_device) {
       // Currently Intel GPU is not supported
-      LOG(FATAL) << "No SYCL host and no OpenCL GPU nor CPU"
-                 << " supported by ComputeCPP/triSYCL was found";
+      LOG(FATAL) << "No SYCL host and no OpenCL device found that"
+                 << " is supported by ComputeCPP/triSYCL";
     } else {
       LOG(INFO) << "Found following OpenCL devices:";
       for (int i = 0; i < device_list.size(); i++) {
@@ -110,6 +100,16 @@ class GSYCLInterface {
       delete p;
     }
     m_queue_interface_.clear();
+  }
+
+  template <class Predicate>
+  void AddDevicesIf(const std::vector<cl::sycl::device>& device_list, bool& found_device, Predicate pred) {
+    for (const auto& device : device_list) {
+      if (pred(device)) {
+        AddDevice(device);
+        found_device = true;
+      }
+    }
   }
 
   void AddDevice(const cl::sycl::device& d) {
@@ -205,6 +205,13 @@ class SYCLDevice : public LocalDevice {
         cpu_allocator_(cpu_allocator),
         sycl_allocator_(sycl_allocator),
         device_context_(ctx) {
+    gpu_device_info_ = new GpuDeviceInfo;
+    gpu_device_info_->default_context = device_context_;
+    // TODO {lukeiwanski}: Improve to support multiple GPU devices
+    gpu_device_info_->gpu_id = 0;
+
+    set_tensorflow_gpu_device_info(gpu_device_info_);
+
     set_eigen_sycl_device(sycl_allocator->getSyclDevice());
   }
 
@@ -225,6 +232,7 @@ class SYCLDevice : public LocalDevice {
   Allocator* cpu_allocator_;           // not owned
   SYCLAllocator* sycl_allocator_;      // not owned
   SYCLDeviceContext* device_context_;  // not owned
+  GpuDeviceInfo* gpu_device_info_ = nullptr;
 };
 
 }  // namespace tensorflow

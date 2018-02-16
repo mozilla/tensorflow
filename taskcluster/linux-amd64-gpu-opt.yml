@@ -7,7 +7,7 @@ build:
   maxRunTime: 14400
   args:
     tcsetup: "--cuda"
-    tcbuild: "--gpu"
+    tcbuild: "--cuda"
   metadata:
     name: "TensorFlow Linux AMD64 CUDA"
     description: "Building TensorFlow for Linux/AMD64, CUDA-enabled, optimized version"

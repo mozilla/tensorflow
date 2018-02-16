@@ -54,7 +54,7 @@ void Split<Eigen::SyclDevice, T>::operator()(
 
 #define DEFINE_SYCL_KERNELS(T) template struct Split<Eigen::SyclDevice, T>;
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(DEFINE_SYCL_KERNELS);
+TF_CALL_SYCL_NUMBER_TYPES(DEFINE_SYCL_KERNELS);
 #endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace functor

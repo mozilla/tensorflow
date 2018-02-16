@@ -106,11 +106,23 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
                          int out_depth, int filter_rows, int filter_cols,
                          CONV_OP op, int num_threads, int stride,
                          Padding padding, bool use_gpu, DataType data_type,
-                         const string& label) {
-  if (!IsGoogleCudaEnabled() && use_gpu) {
-    testing::SetLabel(
-        strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
-    return;
+                         const string& label, TensorFormat data_format) {
+  string device = "cpu";
+  if(use_gpu) {
+    if(IsGoogleCudaEnabled()) {
+      device = "gpu";
+    } else if (IsSYCLEnabled()) {
+      device = "sycl";
+      if (data_type == DT_HALF) {
+        testing::SetLabel(
+            strings::StrCat("Skipping SYCL test for DataType 'half': ", label));
+        return;
+      }
+    } else {
+      testing::SetLabel(
+          strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
+      return;
+    }
   }
   testing::SetLabel(label);
 
@@ -146,15 +158,28 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
               static_cast<int64>(rows * cols) * 2;
   }
 
+  if(data_format == FORMAT_NCHW) {
+  SetConstOp("input", {batch, in_depth, rows, cols}, data_type,
+             graph.add_node());
+  } else {
   SetConstOp("input", {batch, rows, cols, in_depth}, data_type,
              graph.add_node());
+  }
   SetConstOp("filter", {filter_rows, filter_cols, in_depth, out_depth},
              data_type, graph.add_node());
+  if(data_format == FORMAT_NCHW) {
+  SetConstOp("output_backprop", {batch, out_depth, out_rows, out_cols},
+             data_type, graph.add_node());
+  SetConstSizesOp("input_sizes",
+                  std::vector<int32>({batch, in_depth, rows, cols}),
+                  graph.add_node());
+  } else {
   SetConstOp("output_backprop", {batch, out_rows, out_cols, out_depth},
              data_type, graph.add_node());
   SetConstSizesOp("input_sizes",
                   std::vector<int32>({batch, rows, cols, in_depth}),
                   graph.add_node());
+  }
   SetConstSizesOp(
       "filter_sizes",
       std::vector<int32>({filter_rows, filter_cols, in_depth, out_depth}),
@@ -172,6 +197,13 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
                   .Attr("value", paddings_tensor)
                   .Finalize(graph.add_node()));
 
+  std::vector<int> strides;
+  if(data_format == FORMAT_NCHW) {
+    strides = {1, 1, stride, stride};
+  } else {
+    strides = {1, stride, stride, 1};
+  }
+
   // Now add the convolution op
   NodeDef* conv = graph.add_node();
   switch (op) {
@@ -179,8 +211,9 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
       TF_CHECK_OK(NodeDefBuilder("conv2d", "Conv2D")
                       .Input("input", 0, data_type)
                       .Input("filter", 0, data_type)
-                      .Attr("strides", {1, stride, stride, 1})
+                      .Attr("strides", strides)
                       .Attr("padding", padding == VALID ? "VALID" : "SAME")
+                      .Attr("data_format", data_format == FORMAT_NHWC ? "NHWC" : "NCHW")
                       .Finalize(conv));
       break;
     case CONV_OP_BACKPROP_INPUT:
@@ -188,8 +221,9 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
                       .Input("input_sizes", 0, DT_INT32)
                       .Input("filter", 0, data_type)
                       .Input("output_backprop", 0, data_type)
-                      .Attr("strides", {1, stride, stride, 1})
+                      .Attr("strides", strides)
                       .Attr("padding", padding == VALID ? "VALID" : "SAME")
+                      .Attr("data_format", data_format == FORMAT_NHWC ? "NHWC" : "NCHW")
                       .Finalize(conv));
       break;
     case CONV_OP_BACKPROP_FILTER:
@@ -197,8 +231,9 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
                       .Input("input", 0, data_type)
                       .Input("filter_sizes", 0, DT_INT32)
                       .Input("output_backprop", 0, data_type)
-                      .Attr("strides", {1, stride, stride, 1})
+                      .Attr("strides", strides)
                       .Attr("padding", padding == VALID ? "VALID" : "SAME")
+                      .Attr("data_format", data_format == FORMAT_NHWC ? "NHWC" : "NCHW")
                       .Finalize(conv));
       break;
     case CONV_OP_FUSED:
@@ -218,7 +253,6 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
   GraphConstructorOptions opts;
   TF_CHECK_OK(ConvertGraphDefToGraph(opts, graph, g));
 
-  string device = use_gpu ? "gpu" : "cpu";
   testing::UseRealTime();
   test::Benchmark(device, g, &options).Run(iters);
   testing::ItemsProcessed(num_ops * iters);
@@ -232,220 +266,204 @@ static void BM_ConvFloat(int iters, int batch, int rows, int cols, int in_depth,
 // KR: kernel_rows
 // KC: kernel_cols
 #define BM_ConvFloatFwd(BS, R, C, ID, OD, KR, KC, STR, PAD, LABEL)             \
-  static void BM_ConvFloatFwdCPU1_##LABEL(int iters) {                         \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FORWARD, 1, STR,     \
-                 PAD, false, DT_FLOAT,                                         \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_f_cpu1")); \
-  }                                                                            \
-  static void BM_ConvFloatFwdCPU4_##LABEL(int iters) {                         \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FORWARD, 4, STR,     \
-                 PAD, false, DT_FLOAT,                                         \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_f_cpu4")); \
-  }                                                                            \
-  static void BM_ConvFloatFusedCPU1_##LABEL(int iters) {                       \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FUSED, 1, STR, PAD,  \
-                 false, DT_FLOAT,                                              \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_f_cpu1")); \
-  }                                                                            \
-  static void BM_ConvFloatFusedCPU4_##LABEL(int iters) {                       \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FUSED, 4, STR, PAD,  \
-                 false, DT_FLOAT,                                              \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_f_cpu4")); \
-  }                                                                            \
   static void BM_ConvFloatFwdGPU_##LABEL(int iters) {                          \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FORWARD, 1, STR,     \
                  PAD, true, DT_FLOAT,                                          \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_f_gpu"));  \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_f_gpu_nhwc"),\
+        FORMAT_NHWC);  \
   }                                                                            \
-  static void BM_ConvHalfFwdGPU_##LABEL(int iters) {                           \
+  static void BM_ConvNCHWFwdGPU_##LABEL(int iters) {                           \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_FORWARD, 1, STR,     \
-                 PAD, true, DT_HALF,                                           \
+                 PAD, true, DT_FLOAT,                                           \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",    \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_h_gpu"));  \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_h_gpu_nchw"), FORMAT_NCHW);  \
   }                                                                            \
-  BENCHMARK(BM_ConvFloatFwdCPU1_##LABEL);                                      \
-  BENCHMARK(BM_ConvFloatFwdCPU4_##LABEL);                                      \
-  BENCHMARK(BM_ConvFloatFusedCPU1_##LABEL);                                    \
-  BENCHMARK(BM_ConvFloatFusedCPU4_##LABEL);                                    \
   BENCHMARK(BM_ConvFloatFwdGPU_##LABEL);                                       \
-  BENCHMARK(BM_ConvHalfFwdGPU_##LABEL)
+  BENCHMARK(BM_ConvNCHWFwdGPU_##LABEL)
 
-BM_ConvFloatFwd(32, 5, 5, 1248, 128, 1, 1, 1, SAME, conv0);
-BM_ConvFloatFwd(32, 8, 8, 384, 384, 1, 3, 1, SAME, conv1);
-BM_ConvFloatFwd(32, 8, 8, 384, 384, 3, 1, 1, SAME, conv2);
-BM_ConvFloatFwd(32, 8, 8, 2048, 192, 1, 1, 1, SAME, conv3);
-BM_ConvFloatFwd(32, 8, 8, 448, 384, 3, 3, 1, SAME, conv4);
-BM_ConvFloatFwd(32, 8, 8, 2048, 320, 1, 1, 1, SAME, conv5);
-BM_ConvFloatFwd(32, 8, 8, 2048, 448, 1, 1, 1, SAME, conv6);
-BM_ConvFloatFwd(32, 8, 8, 2048, 384, 1, 1, 1, SAME, conv7);
-BM_ConvFloatFwd(32, 8, 8, 1760, 384, 1, 1, 1, SAME, conv8);
-BM_ConvFloatFwd(32, 8, 8, 1760, 192, 1, 1, 1, SAME, conv9);
-BM_ConvFloatFwd(32, 8, 8, 1760, 448, 1, 1, 1, SAME, conv10);
-BM_ConvFloatFwd(32, 8, 8, 1760, 320, 1, 1, 1, SAME, conv11);
-BM_ConvFloatFwd(32, 17, 17, 192, 192, 3, 3, 2, VALID, conv12);
-BM_ConvFloatFwd(32, 17, 17, 192, 192, 3, 3, 1, SAME, conv13);
-BM_ConvFloatFwd(32, 17, 17, 1248, 192, 1, 1, 1, SAME, conv14);
-BM_ConvFloatFwd(32, 17, 17, 128, 320, 3, 3, 2, VALID, conv15);
-BM_ConvFloatFwd(32, 17, 17, 1248, 128, 1, 1, 1, SAME, conv16);
-BM_ConvFloatFwd(32, 17, 17, 224, 224, 1, 3, 1, SAME, conv17);
-BM_ConvFloatFwd(32, 17, 17, 192, 256, 3, 1, 1, SAME, conv18);
-BM_ConvFloatFwd(32, 17, 17, 192, 256, 1, 3, 1, SAME, conv19);
-BM_ConvFloatFwd(32, 17, 17, 1216, 192, 1, 1, 1, SAME, conv20);
-BM_ConvFloatFwd(32, 17, 17, 1216, 96, 1, 1, 1, SAME, conv21);
-BM_ConvFloatFwd(32, 17, 17, 224, 224, 3, 1, 1, SAME, conv22);
-BM_ConvFloatFwd(32, 17, 17, 192, 224, 3, 3, 1, SAME, conv23);
-BM_ConvFloatFwd(32, 17, 17, 192, 192, 1, 3, 1, SAME, conv24);
-BM_ConvFloatFwd(32, 17, 17, 1152, 192, 1, 1, 1, SAME, conv25);
-BM_ConvFloatFwd(32, 17, 17, 1152, 128, 1, 1, 1, SAME, conv26);
-BM_ConvFloatFwd(32, 17, 17, 192, 192, 3, 1, 1, SAME, conv27);
-BM_ConvFloatFwd(32, 17, 17, 160, 192, 3, 3, 1, SAME, conv28);
-BM_ConvFloatFwd(32, 17, 17, 1152, 160, 1, 1, 1, SAME, conv29);
-BM_ConvFloatFwd(32, 17, 17, 1024, 128, 1, 1, 1, SAME, conv30);
-BM_ConvFloatFwd(32, 17, 17, 128, 192, 1, 3, 1, SAME, conv31);
-BM_ConvFloatFwd(32, 17, 17, 1024, 160, 1, 1, 1, SAME, conv32);
-BM_ConvFloatFwd(32, 17, 17, 128, 192, 3, 1, 1, SAME, conv33);
-BM_ConvFloatFwd(32, 17, 17, 1024, 256, 1, 1, 1, SAME, conv34);
-BM_ConvFloatFwd(32, 17, 17, 128, 128, 3, 1, 1, SAME, conv35);
-BM_ConvFloatFwd(32, 17, 17, 768, 192, 1, 1, 1, SAME, conv36);
-BM_ConvFloatFwd(32, 17, 17, 128, 128, 1, 3, 1, SAME, conv37);
-BM_ConvFloatFwd(32, 17, 17, 128, 128, 3, 3, 1, SAME, conv38);
-BM_ConvFloatFwd(32, 17, 17, 768, 128, 1, 1, 1, SAME, conv39);
-BM_ConvFloatFwd(32, 17, 17, 768, 320, 1, 1, 1, SAME, conv40);
-BM_ConvFloatFwd(32, 35, 35, 96, 96, 3, 3, 2, VALID, conv41);
-BM_ConvFloatFwd(32, 35, 35, 288, 384, 3, 3, 2, VALID, conv42);
-BM_ConvFloatFwd(32, 35, 35, 64, 96, 3, 3, 1, SAME, conv43);
-BM_ConvFloatFwd(32, 35, 35, 288, 64, 1, 1, 1, SAME, conv44);
-BM_ConvFloatFwd(32, 35, 35, 256, 64, 1, 1, 1, SAME, conv45);
-BM_ConvFloatFwd(32, 35, 35, 48, 64, 5, 5, 1, SAME, conv46);
-BM_ConvFloatFwd(32, 35, 35, 256, 48, 1, 1, 1, SAME, conv47);
-BM_ConvFloatFwd(32, 35, 35, 96, 96, 3, 3, 1, SAME, conv48);
-BM_ConvFloatFwd(32, 35, 35, 192, 32, 1, 1, 1, SAME, conv49);
-BM_ConvFloatFwd(32, 35, 35, 192, 64, 1, 1, 1, SAME, conv50);
-BM_ConvFloatFwd(32, 35, 35, 192, 48, 1, 1, 1, SAME, conv51);
-BM_ConvFloatFwd(32, 73, 73, 64, 192, 3, 3, 1, VALID, conv52);
-BM_ConvFloatFwd(32, 73, 73, 64, 64, 1, 1, 1, VALID, conv53);
-BM_ConvFloatFwd(32, 147, 147, 24, 64, 1, 1, 1, VALID, conv54);
+#define BM_Models(BATCH) \
+BM_ConvFloatFwd(BATCH, 230, 230, 3, 64, 7, 7, 2, SAME, resnet0_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet1_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,   64, 1, 1, 1, SAME, resnet2_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet3_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet4_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,  256,   64, 1, 1, 1, SAME, resnet5_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet6_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet7_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,  256,   64, 1, 1, 1, SAME, resnet8_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet9_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet10_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,  256,  512, 1, 1, 2, SAME, resnet11_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 55, 55,  256,  128, 1, 1, 2, SAME, resnet12_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet13_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet14_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet15_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet16_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet17_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet18_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet19_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet20_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet21_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet22_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet23_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  512, 1024, 1, 1, 2, SAME, resnet24_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28,  512,  256, 1, 1, 2, SAME, resnet25_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet26_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet27_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet28_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet29_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet30_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet31_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet32_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet33_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet34_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet35_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet36_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet37_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet38_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet39_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet40_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet41_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet42_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024, 2048, 1, 1, 2, SAME, resnet43_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 1024,  512, 1, 1, 2, SAME, resnet44_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet45_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet46_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7, 2048,  512, 1, 1, 1, SAME, resnet47_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet48_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet49_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7, 2048,  512, 1, 1, 1, SAME, resnet50_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet51_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet52_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 227, 227, 3, 64, 11, 11, 4, SAME, alexnet1_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 27, 27,  64, 192, 5, 5, 1, SAME, alexnet2_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 13, 13, 192, 384, 3, 3, 1, SAME, alexnet3_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 13, 13, 384, 384, 3, 3, 1, SAME, alexnet4_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 13, 13, 384, 256, 3, 3, 1, SAME, alexnet5_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 112, 112,  64, 128, 3, 3, 1, SAME, vgg3_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 56, 56, 128, 256, 3, 3, 1, SAME, vgg5_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 56, 56, 256, 256, 3, 3, 1, SAME, vgg6_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 56, 56, 256, 256, 3, 3, 1, SAME, vgg7_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28, 256, 512, 3, 3, 1, SAME, vgg8_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28, 512, 512, 3, 3, 1, SAME, vgg9_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 28, 28, 512, 512, 3, 3, 1, SAME, vgg10_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg11_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg12_b##BATCH); \
+BM_ConvFloatFwd(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg13_b##BATCH);
+// These cause mem alloc failures at the moment.
+//BM_ConvFloatFwd(BATCH, 224, 224,   3,  64, 3, 3, 1, SAME, vgg1_b##BATCH); \
+//BM_ConvFloatFwd(BATCH, 224, 224,  64,  64, 3, 3, 1, SAME, vgg2_b##BATCH); \
+//BM_ConvFloatFwd(BATCH, 112, 112, 128, 128, 3, 3, 1, SAME, vgg4_b##BATCH); \
+
+BM_Models(1);
+BM_Models(32);
 
 #define BM_ConvFloatBkInAndFilter(BS, R, C, ID, OD, KR, KC, STR, PAD, LABEL)  \
-  static void BM_ConvFloatBkInCPU1_##LABEL(int iters) {                       \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_INPUT, 1,  \
-                 STR, PAD, false, DT_FLOAT,                                   \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_cpu1"));  \
-  }                                                                           \
-  static void BM_ConvFloatBkInCPU4_##LABEL(int iters) {                       \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_INPUT, 4,  \
-                 STR, PAD, false, DT_FLOAT,                                   \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_cpu4"));  \
-  }                                                                           \
   static void BM_ConvFloatBkInGPU_##LABEL(int iters) {                        \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_INPUT, 1,  \
                  STR, PAD, true, DT_FLOAT,                                    \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu"));   \
-  }                                                                           \
-  static void BM_ConvFloatBkFilterCPU1_##LABEL(int iters) {                   \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_FILTER, 1, \
-                 STR, PAD, false, DT_FLOAT,                                   \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_cpu1"));  \
-  }                                                                           \
-  static void BM_ConvFloatBkFilterCPU4_##LABEL(int iters) {                   \
-    BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_FILTER, 4, \
-                 STR, PAD, false, DT_FLOAT,                                   \
-                 strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_cpu4"));  \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu_nhwc"), FORMAT_NHWC);   \
   }                                                                           \
   static void BM_ConvFloatBkFilterGPU_##LABEL(int iters) {                    \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_FILTER, 1, \
                  STR, PAD, true, DT_FLOAT,                                    \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu"));   \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu_nhwc"), FORMAT_NHWC);   \
   }                                                                           \
-  static void BM_ConvHalfBkInGPU_##LABEL(int iters) {                         \
+  static void BM_ConvNCHWBkInGPU_##LABEL(int iters) {                         \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_INPUT, 1,  \
-                 STR, PAD, true, DT_HALF,                                     \
+                 STR, PAD, true, DT_FLOAT,                                     \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu"));   \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu_nchw"), FORMAT_NCHW);   \
   }                                                                           \
-  static void BM_ConvHalfBkFilterGPU_##LABEL(int iters) {                     \
+  static void BM_ConvNCHWBkFilterGPU_##LABEL(int iters) {                     \
     BM_ConvFloat(iters, BS, R, C, ID, OD, KR, KC, CONV_OP_BACKPROP_FILTER, 1, \
-                 STR, PAD, true, DT_HALF,                                     \
+                 STR, PAD, true, DT_FLOAT,                                     \
                  strings::StrCat(BS, "_", R, "_", C, "_", ID, "_", OD, "_",   \
-                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu"));   \
+                                 KR, "_", KC, "_", STR, "_", PAD, "_gpu_nchw"), FORMAT_NCHW);   \
   }                                                                           \
-  BENCHMARK(BM_ConvFloatBkInCPU1_##LABEL);                                    \
-  BENCHMARK(BM_ConvFloatBkInCPU4_##LABEL);                                    \
   BENCHMARK(BM_ConvFloatBkInGPU_##LABEL);                                     \
-  BENCHMARK(BM_ConvFloatBkFilterCPU1_##LABEL);                                \
-  BENCHMARK(BM_ConvFloatBkFilterCPU4_##LABEL);                                \
   BENCHMARK(BM_ConvFloatBkFilterGPU_##LABEL);                                 \
-  BENCHMARK(BM_ConvHalfBkInGPU_##LABEL);                                      \
-  BENCHMARK(BM_ConvHalfBkFilterGPU_##LABEL)
+  BENCHMARK(BM_ConvNCHWBkInGPU_##LABEL);                                      \
+  BENCHMARK(BM_ConvNCHWBkFilterGPU_##LABEL)
 
-// Benchmarks from the inception model
+#define BM_Models_bk(BATCH) \
+BM_ConvFloatBkInAndFilter(BATCH, 230, 230, 3, 64, 7, 7, 2, SAME, resnet0_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet1_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,   64, 1, 1, 1, SAME, resnet2_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet3_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet4_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,  256,   64, 1, 1, 1, SAME, resnet5_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet6_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet7_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,  256,   64, 1, 1, 1, SAME, resnet8_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,   64, 3, 3, 1, SAME, resnet9_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,   64,  256, 1, 1, 1, SAME, resnet10_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,  256,  512, 1, 1, 2, SAME, resnet11_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 55, 55,  256,  128, 1, 1, 2, SAME, resnet12_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet13_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet14_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet15_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet16_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet17_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet18_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet19_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet20_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  512,  128, 1, 1, 1, SAME, resnet21_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  128, 3, 3, 1, SAME, resnet22_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  128,  512, 1, 1, 1, SAME, resnet23_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  512, 1024, 1, 1, 2, SAME, resnet24_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28,  512,  256, 1, 1, 2, SAME, resnet25_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet26_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet27_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet28_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet29_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet30_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet31_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet32_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet33_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet34_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet35_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet36_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet37_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet38_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet39_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  256, 1, 1, 1, SAME, resnet40_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256,  256, 3, 3, 1, SAME, resnet41_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14,  256, 1024, 1, 1, 1, SAME, resnet42_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024, 2048, 1, 1, 2, SAME, resnet43_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 1024,  512, 1, 1, 2, SAME, resnet44_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet45_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet46_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7, 2048,  512, 1, 1, 1, SAME, resnet47_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet48_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet49_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7, 2048,  512, 1, 1, 1, SAME, resnet50_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512,  512, 3, 3, 1, SAME, resnet51_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 27, 27,  64, 192, 5, 5, 1, SAME, alexnet2_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 13, 13, 192, 384, 3, 3, 1, SAME, alexnet3_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 13, 13, 384, 384, 3, 3, 1, SAME, alexnet4_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 13, 13, 384, 256, 3, 3, 1, SAME, alexnet5_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 112, 112,  64, 128, 3, 3, 1, SAME, vgg3_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 56, 56, 128, 256, 3, 3, 1, SAME, vgg5_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 56, 56, 256, 256, 3, 3, 1, SAME, vgg6_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 56, 56, 256, 256, 3, 3, 1, SAME, vgg7_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28, 256, 512, 3, 3, 1, SAME, vgg8_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28, 512, 512, 3, 3, 1, SAME, vgg9_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 28, 28, 512, 512, 3, 3, 1, SAME, vgg10_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg11_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg12_b##BATCH); \
+BM_ConvFloatBkInAndFilter(BATCH, 14, 14, 512, 512, 3, 3, 1, SAME, vgg13_b##BATCH);
+//BM_ConvFloatBkInAndFilter(BATCH, 224, 224,   3,  64, 3, 3, 1, SAME, vgg1_b##BATCH); \
+//BM_ConvFloatBkInAndFilter(BATCH, 224, 224,  64,  64, 3, 3, 1, SAME, vgg2_b##BATCH); \
+//BM_ConvFloatBkInAndFilter(BATCH, 112, 112, 128, 128, 3, 3, 1, SAME, vgg4_b##BATCH); \
+//BM_ConvFloatBkInAndFilter(BATCH, 227, 227, 3, 64, 11, 11, 4, SAME, alexnet1_b##BATCH); \
+//BM_ConvFloatBkInAndFilter(BATCH, 7, 7,  512, 2048, 1, 1, 1, SAME, resnet52_b##BATCH); \
 
-BM_ConvFloatBkInAndFilter(32, 5, 5, 1248, 128, 1, 1, 1, SAME, conv0);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 384, 384, 1, 3, 1, SAME, conv1);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 384, 384, 3, 1, 1, SAME, conv2);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 2048, 192, 1, 1, 1, SAME, conv3);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 448, 384, 3, 3, 1, SAME, conv4);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 2048, 320, 1, 1, 1, SAME, conv5);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 2048, 448, 1, 1, 1, SAME, conv6);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 2048, 384, 1, 1, 1, SAME, conv7);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 1760, 384, 1, 1, 1, SAME, conv8);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 1760, 192, 1, 1, 1, SAME, conv9);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 1760, 448, 1, 1, 1, SAME, conv10);
-BM_ConvFloatBkInAndFilter(32, 8, 8, 1760, 320, 1, 1, 1, SAME, conv11);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 192, 3, 3, 2, VALID, conv12);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 192, 3, 3, 1, SAME, conv13);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1248, 192, 1, 1, 1, SAME, conv14);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 320, 3, 3, 2, VALID, conv15);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1248, 128, 1, 1, 1, SAME, conv16);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 224, 224, 1, 3, 1, SAME, conv17);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 256, 3, 1, 1, SAME, conv18);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 256, 1, 3, 1, SAME, conv19);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1216, 192, 1, 1, 1, SAME, conv20);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1216, 96, 1, 1, 1, SAME, conv21);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 224, 224, 3, 1, 1, SAME, conv22);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 224, 3, 3, 1, SAME, conv23);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 192, 1, 3, 1, SAME, conv24);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1152, 192, 1, 1, 1, SAME, conv25);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1152, 128, 1, 1, 1, SAME, conv26);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 192, 192, 3, 1, 1, SAME, conv27);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 160, 192, 3, 3, 1, SAME, conv28);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1152, 160, 1, 1, 1, SAME, conv29);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1024, 128, 1, 1, 1, SAME, conv30);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 192, 1, 3, 1, SAME, conv31);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1024, 160, 1, 1, 1, SAME, conv32);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 192, 3, 1, 1, SAME, conv33);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 1024, 256, 1, 1, 1, SAME, conv34);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 128, 3, 1, 1, SAME, conv35);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 768, 192, 1, 1, 1, SAME, conv36);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 128, 1, 3, 1, SAME, conv37);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 128, 128, 3, 3, 1, SAME, conv38);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 768, 128, 1, 1, 1, SAME, conv39);
-BM_ConvFloatBkInAndFilter(32, 17, 17, 768, 320, 1, 1, 1, SAME, conv40);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 96, 96, 3, 3, 2, VALID, conv41);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 288, 384, 3, 3, 2, VALID, conv42);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 64, 96, 3, 3, 1, SAME, conv43);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 288, 64, 1, 1, 1, SAME, conv44);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 256, 64, 1, 1, 1, SAME, conv45);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 48, 64, 5, 5, 1, SAME, conv46);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 256, 48, 1, 1, 1, SAME, conv47);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 96, 96, 3, 3, 1, SAME, conv48);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 192, 32, 1, 1, 1, SAME, conv49);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 192, 64, 1, 1, 1, SAME, conv50);
-BM_ConvFloatBkInAndFilter(32, 35, 35, 192, 48, 1, 1, 1, SAME, conv51);
-BM_ConvFloatBkInAndFilter(32, 73, 73, 64, 192, 3, 3, 1, VALID, conv52);
-BM_ConvFloatBkInAndFilter(32, 73, 73, 64, 64, 1, 1, 1, VALID, conv53);
-BM_ConvFloatBkInAndFilter(32, 147, 147, 24, 64, 1, 1, 1, VALID, conv54);
+BM_Models_bk(1);
+//BM_Models_bk(32);
 
 #define BM_ConvFloatBkFCPU(BS, R, C, ID, OD, KR, KC, TH, LABEL)                \
   static void                                                                  \
@@ -458,11 +476,11 @@ BM_ConvFloatBkInAndFilter(32, 147, 147, 24, 64, 1, 1, 1, VALID, conv54);
       BM_ConvFloatBkFCPU_##BS##_##R##_##C##_##ID##_##OD##_##KR##_##KC##_##TH);
 
 // Benchmarks from https://github.com/soumith/convnet-benchmarks
-BM_ConvFloatBkFCPU(128, 128, 128, 3, 96, 11, 11, 4, "convnet-layer1");
-BM_ConvFloatBkFCPU(128, 64, 64, 64, 128, 9, 9, 4, "convnet-layer2");
-BM_ConvFloatBkFCPU(128, 32, 32, 128, 128, 9, 9, 4, "convnet-layer3");
-BM_ConvFloatBkFCPU(128, 16, 16, 128, 128, 7, 7, 4, "convnet-layer4");
-BM_ConvFloatBkFCPU(128, 13, 13, 384, 384, 3, 3, 4, "convnet-layer5");
+//BM_ConvFloatBkFCPU(128, 128, 128, 3, 96, 11, 11, 4, "convnet-layer1");
+//BM_ConvFloatBkFCPU(128, 64, 64, 64, 128, 9, 9, 4, "convnet-layer2");
+//BM_ConvFloatBkFCPU(128, 32, 32, 128, 128, 9, 9, 4, "convnet-layer3");
+//BM_ConvFloatBkFCPU(128, 16, 16, 128, 128, 7, 7, 4, "convnet-layer4");
+//BM_ConvFloatBkFCPU(128, 13, 13, 384, 384, 3, 3, 4, "convnet-layer5");
 
 #define BM_ConvFloatBkFGPU(BS, R, C, ID, OD, KR, KC, LABEL)                    \
   static void BM_ConvFloatBkFGPU_##BS##_##R##_##C##_##ID##_##OD##_##KR##_##KC( \
@@ -478,12 +496,13 @@ BM_ConvFloatBkFCPU(128, 13, 13, 384, 384, 3, 3, 4, "convnet-layer5");
   BENCHMARK(BM_ConvFloatBkFGPU_##BS##_##R##_##C##_##ID##_##OD##_##KR##_##KC);  \
   BENCHMARK(BM_ConvHalfBkFGPU_##BS##_##R##_##C##_##ID##_##OD##_##KR##_##KC)
 
+
 // Benchmarks from https://github.com/soumith/convnet-benchmarks
-BM_ConvFloatBkFGPU(128, 128, 128, 3, 96, 11, 11, "convnet-layer1");
-BM_ConvFloatBkFGPU(128, 64, 64, 64, 128, 9, 9, "convnet-layer2");
-BM_ConvFloatBkFGPU(128, 32, 32, 128, 128, 9, 9, "convnet-layer3");
-BM_ConvFloatBkFGPU(128, 16, 16, 128, 128, 7, 7, "convnet-layer4");
-BM_ConvFloatBkFGPU(128, 13, 13, 384, 384, 3, 3, "convnet-layer5");
+//BM_ConvFloatBkFGPU(128, 128, 128, 3, 96, 11, 11, "convnet-layer1");
+//BM_ConvFloatBkFGPU(128, 64, 64, 64, 128, 9, 9, "convnet-layer2");
+//BM_ConvFloatBkFGPU(128, 32, 32, 128, 128, 9, 9, "convnet-layer3");
+//BM_ConvFloatBkFGPU(128, 16, 16, 128, 128, 7, 7, "convnet-layer4");
+//BM_ConvFloatBkFGPU(128, 13, 13, 384, 384, 3, 3, "convnet-layer5");
 
 namespace {
 
@@ -501,10 +520,17 @@ static void BM_ConvFloatDepthwise(int iters, int batch, int rows, int cols,
                                   int filter_cols, DEPTHWISE_CONV_OP op,
                                   int num_threads, int stride, Padding padding,
                                   bool use_gpu, const string& label) {
-  if (!IsGoogleCudaEnabled() && use_gpu) {
-    testing::SetLabel(
-        strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
-    return;
+  string device = "cpu";
+  if(use_gpu) {
+    if(IsGoogleCudaEnabled()) {
+      device = "gpu";
+    } else if (IsSYCLEnabled()) {
+      device = "sycl";
+    } else {
+      testing::SetLabel(
+          strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
+      return;
+    }
   }
   testing::SetLabel(label);
 
@@ -598,7 +624,6 @@ static void BM_ConvFloatDepthwise(int iters, int batch, int rows, int cols,
   GraphConstructorOptions opts;
   TF_CHECK_OK(ConvertGraphDefToGraph(opts, graph, g));
 
-  string device = use_gpu ? "gpu" : "cpu";
   testing::UseRealTime();
   test::Benchmark(device, g, &options).Run(iters);
   testing::ItemsProcessed(num_ops * iters);
@@ -642,19 +667,19 @@ static void BM_ConvFloatDepthwise(int iters, int batch, int rows, int cols,
   BENCHMARK(BM_ConvFloatDepthwiseFwdCPU4_##LABEL);                          \
   BENCHMARK(BM_ConvFloatDepthwiseFwdGPU_##LABEL);
 
-// The configurations below are mostly from mobilenet models.
-BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv0);
-BM_ConvFloatDepthwiseFwd(32, 112, 112, 64, 1, 64, 3, 3, 1, SAME, conv1);
-BM_ConvFloatDepthwiseFwd(32, 56, 56, 128, 1, 128, 3, 3, 1, SAME, conv2);
-BM_ConvFloatDepthwiseFwd(32, 56, 56, 128, 1, 128, 3, 3, 2, SAME, conv3);
-BM_ConvFloatDepthwiseFwd(32, 28, 28, 128, 1, 128, 3, 3, 1, SAME, conv4);
-BM_ConvFloatDepthwiseFwd(32, 14, 14, 512, 1, 512, 3, 3, 1, SAME, conv5);
-BM_ConvFloatDepthwiseFwd(32, 7, 7, 1024, 1, 1024, 3, 3, 1, SAME, conv6);
-// Benchmarks with different stride and padding options.
-BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 2, SAME, conv7);
-BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 2, VALID, conv8);
-BM_ConvFloatDepthwiseFwd(1, 100, 100, 72, 1, 72, 3, 3, 1, SAME, conv9);
-BM_ConvFloatDepthwiseFwd(1, 100, 100, 72, 1, 72, 5, 5, 1, SAME, conv10);
+//// The configurations below are mostly from mobilenet models.
+//BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv0);
+//BM_ConvFloatDepthwiseFwd(32, 112, 112, 64, 1, 64, 3, 3, 1, SAME, conv1);
+//BM_ConvFloatDepthwiseFwd(32, 56, 56, 128, 1, 128, 3, 3, 1, SAME, conv2);
+//BM_ConvFloatDepthwiseFwd(32, 56, 56, 128, 1, 128, 3, 3, 2, SAME, conv3);
+//BM_ConvFloatDepthwiseFwd(32, 28, 28, 128, 1, 128, 3, 3, 1, SAME, conv4);
+//BM_ConvFloatDepthwiseFwd(32, 14, 14, 512, 1, 512, 3, 3, 1, SAME, conv5);
+//BM_ConvFloatDepthwiseFwd(32, 7, 7, 1024, 1, 1024, 3, 3, 1, SAME, conv6);
+//// Benchmarks with different stride and padding options.
+//BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 2, SAME, conv7);
+//BM_ConvFloatDepthwiseFwd(32, 112, 112, 3, 8, 24, 3, 3, 2, VALID, conv8);
+//BM_ConvFloatDepthwiseFwd(1, 100, 100, 72, 1, 72, 3, 3, 1, SAME, conv9);
+//BM_ConvFloatDepthwiseFwd(1, 100, 100, 72, 1, 72, 5, 5, 1, SAME, conv10);
 
 #define BM_ConvFloatDepthwiseBk(BS, R, C, ID, DM, OD, KR, KC, STR, PAD, LABEL) \
   static void BM_ConvFloatDepthwiseBkInCPU1_##LABEL(int iters) {               \
@@ -707,25 +732,25 @@ BM_ConvFloatDepthwiseFwd(1, 100, 100, 72, 1, 72, 5, 5, 1, SAME, conv10);
   BENCHMARK(BM_ConvFloatDepthwiseBkFilterGPU_##LABEL)
 
 // The configurations below are mostly from mobilenet models.
-BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv0);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 64, 1, 64, 3, 3, 1, SAME, conv1);
-BM_ConvFloatDepthwiseBk(32, 56, 56, 128, 1, 128, 3, 3, 1, SAME, conv2);
-BM_ConvFloatDepthwiseBk(32, 56, 56, 128, 1, 128, 3, 3, 2, SAME, conv3);
-BM_ConvFloatDepthwiseBk(32, 28, 28, 128, 1, 128, 3, 3, 1, SAME, conv4);
-BM_ConvFloatDepthwiseBk(32, 14, 14, 512, 1, 512, 3, 3, 1, SAME, conv5);
-BM_ConvFloatDepthwiseBk(32, 7, 7, 1024, 1, 1024, 3, 3, 1, SAME, conv6);
-// Benchmarks with different stride and padding options, varying depth
-// multiplier.
-BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 2, SAME, conv7);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 2, VALID, conv8);
-
-// Vary depth multiplier.
-BM_ConvFloatDepthwiseBk(32, 112, 112, 1, 24, 24, 3, 3, 1, SAME, conv9);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 2, 12, 24, 3, 3, 1, SAME, conv10);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv11);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 8, 3, 24, 3, 3, 1, SAME, conv12);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 12, 2, 24, 3, 3, 1, SAME, conv13);
-BM_ConvFloatDepthwiseBk(32, 112, 112, 24, 1, 24, 3, 3, 1, SAME, conv14);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv0);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 64, 1, 64, 3, 3, 1, SAME, conv1);
+//BM_ConvFloatDepthwiseBk(32, 56, 56, 128, 1, 128, 3, 3, 1, SAME, conv2);
+//BM_ConvFloatDepthwiseBk(32, 56, 56, 128, 1, 128, 3, 3, 2, SAME, conv3);
+//BM_ConvFloatDepthwiseBk(32, 28, 28, 128, 1, 128, 3, 3, 1, SAME, conv4);
+//BM_ConvFloatDepthwiseBk(32, 14, 14, 512, 1, 512, 3, 3, 1, SAME, conv5);
+//BM_ConvFloatDepthwiseBk(32, 7, 7, 1024, 1, 1024, 3, 3, 1, SAME, conv6);
+//// Benchmarks with different stride and padding options, varying depth
+//// multiplier.
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 2, SAME, conv7);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 2, VALID, conv8);
+//
+//// Vary depth multiplier.
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 1, 24, 24, 3, 3, 1, SAME, conv9);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 2, 12, 24, 3, 3, 1, SAME, conv10);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 3, 8, 24, 3, 3, 1, SAME, conv11);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 8, 3, 24, 3, 3, 1, SAME, conv12);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 12, 2, 24, 3, 3, 1, SAME, conv13);
+//BM_ConvFloatDepthwiseBk(32, 112, 112, 24, 1, 24, 3, 3, 1, SAME, conv14);
 
 static void BM_LRNFloat(int iters, int depth, int cols, int rows,
                         int batch_size, int range, int num_threads,
@@ -795,15 +820,15 @@ static void BM_LRNFloat(int iters, int depth, int cols, int rows,
 
 // clang-format off
 //                DEPTH, COLS, ROWS, BATCH, RANGE, THREADS, LABEL
-BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     1,       "lrn 1 thread");
-BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     1,       "lrn 1 thread");
-BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     1,       "lrn 1 thread");
-BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     4,       "lrn 4 threads");
-BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     4,       "lrn 4 threads");
-BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     4,       "lrn 4 threads");
-BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     8,       "lrn 8 threads");
-BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     8,       "lrn 8 threads");
-BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     8,       "lrn 8 threads");
+//BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     1,       "lrn 1 thread");
+//BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     1,       "lrn 1 thread");
+//BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     1,       "lrn 1 thread");
+//BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     4,       "lrn 4 threads");
+//BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     4,       "lrn 4 threads");
+//BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     4,       "lrn 4 threads");
+//BM_LRNFloatFwdCPU(64,    56,   56,   32,    5,     8,       "lrn 8 threads");
+//BM_LRNFloatFwdCPU(192,   28,   28,   64,    2,     8,       "lrn 8 threads");
+//BM_LRNFloatFwdCPU(192,   56,   56,   32,    5,     8,       "lrn 8 threads");
 // clang-format on
 
 /*
@@ -883,22 +908,22 @@ static void BM_AvgPool(int iters, int batch_size, int rows, int cols, int depth,
       BM_AvgPool_##BS##_##IR##_##IC##_##ND##_##KR##_##KC##_##ST##_##PT##_##TH)
 
 // Labels are taken from the 2014-July-24 version of imagenet
-BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 1, "avgpool0_VALID");
-BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 1, "avgpool1_VALID");
-BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 1, "avgpool4_VALID");
-BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 1, "avgpool10_VALID");
-BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 1, "avgpool0_SAME");
-BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 1, "avgpool1_SAME");
-BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 1, "avgpool4_SAME");
-BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 1, "avgpool10_SAME");
-BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 4, "avgpool0_VALID");
-BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 4, "avgpool1_VALID");
-BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 4, "avgpool4_VALID");
-BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 4, "avgpool10_VALID");
-BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 4, "avgpool0_SAME");
-BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 4, "avgpool1_SAME");
-BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 4, "avgpool4_SAME");
-BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 4, "avgpool10_SAME");
+//BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 1, "avgpool0_VALID");
+//BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 1, "avgpool1_VALID");
+//BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 1, "avgpool4_VALID");
+//BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 1, "avgpool10_VALID");
+//BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 1, "avgpool0_SAME");
+//BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 1, "avgpool1_SAME");
+//BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 1, "avgpool4_SAME");
+//BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 1, "avgpool10_SAME");
+//BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 4, "avgpool0_VALID");
+//BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 4, "avgpool1_VALID");
+//BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 4, "avgpool4_VALID");
+//BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 4, "avgpool10_VALID");
+//BM_AvgPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 4, "avgpool0_SAME");
+//BM_AvgPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 4, "avgpool1_SAME");
+//BM_AvgPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 4, "avgpool4_SAME");
+//BM_AvgPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 4, "avgpool10_SAME");
 
 static void BM_AvgPoolBk(int iters, int batch_size, int rows, int cols,
                          int depth, int kernel_rows, int kernel_cols,
@@ -989,15 +1014,15 @@ static void BM_AvgPoolBk(int iters, int batch_size, int rows, int cols,
       BM_AvgPoolBk_##BS##_##IR##_##IC##_##ND##_##KR##_##KC##_##ST##_##PT##_##TH)
 
 // Shapes taken from the 2015/05/16 inception model
-BM_AvgPoolBkCPU(32, 35, 35, 192, 3, 3, 1, SAME, 1, "avgpool_grad0_SAME");
-BM_AvgPoolBkCPU(32, 35, 35, 256, 3, 3, 1, SAME, 1, "avgpool_grad1_SAME");
-BM_AvgPoolBkCPU(32, 17, 17, 768, 3, 3, 1, SAME, 1, "avgpool_grad2_SAME");
-BM_AvgPoolBkCPU(32, 17, 17, 1024, 3, 3, 1, SAME, 1, "avgpool_grad3_SAME");
-BM_AvgPoolBkCPU(32, 17, 17, 1152, 3, 3, 1, SAME, 1, "avgpool_grad4_SAME");
-BM_AvgPoolBkCPU(32, 17, 17, 1216, 3, 3, 1, SAME, 1, "avgpool_grad5_SAME");
-BM_AvgPoolBkCPU(32, 17, 17, 1248, 5, 5, 3, VALID, 1, "avgpool_grad6_VALID");
-BM_AvgPoolBkCPU(32, 8, 8, 1760, 3, 3, 1, SAME, 1, "avgpool_grad7_SAME");
-BM_AvgPoolBkCPU(32, 8, 8, 2048, 8, 8, 1, VALID, 1, "avgpool_grad8_VALID");
+//BM_AvgPoolBkCPU(32, 35, 35, 192, 3, 3, 1, SAME, 1, "avgpool_grad0_SAME");
+//BM_AvgPoolBkCPU(32, 35, 35, 256, 3, 3, 1, SAME, 1, "avgpool_grad1_SAME");
+//BM_AvgPoolBkCPU(32, 17, 17, 768, 3, 3, 1, SAME, 1, "avgpool_grad2_SAME");
+//BM_AvgPoolBkCPU(32, 17, 17, 1024, 3, 3, 1, SAME, 1, "avgpool_grad3_SAME");
+//BM_AvgPoolBkCPU(32, 17, 17, 1152, 3, 3, 1, SAME, 1, "avgpool_grad4_SAME");
+//BM_AvgPoolBkCPU(32, 17, 17, 1216, 3, 3, 1, SAME, 1, "avgpool_grad5_SAME");
+//BM_AvgPoolBkCPU(32, 17, 17, 1248, 5, 5, 3, VALID, 1, "avgpool_grad6_VALID");
+//BM_AvgPoolBkCPU(32, 8, 8, 1760, 3, 3, 1, SAME, 1, "avgpool_grad7_SAME");
+//BM_AvgPoolBkCPU(32, 8, 8, 2048, 8, 8, 1, VALID, 1, "avgpool_grad8_VALID");
 
 /*
 MaxPooling Op
@@ -1088,19 +1113,31 @@ BM_MaxPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 1, "maxpool1_SAME");
 BM_MaxPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 1, "maxpool4_SAME");
 BM_MaxPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 1, "maxpool10_SAME");
 */
-BM_MaxPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 4, "maxpool0_VALID");
-BM_MaxPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 4, "maxpool1_VALID");
-BM_MaxPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 4, "maxpool4_VALID");
-BM_MaxPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 4, "maxpool10_VALID");
-BM_MaxPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 4, "maxpool0_SAME");
-BM_MaxPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 4, "maxpool1_SAME");
-BM_MaxPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 4, "maxpool4_SAME");
-BM_MaxPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 4, "maxpool10_SAME");
+//BM_MaxPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, VALID, 4, "maxpool0_VALID");
+//BM_MaxPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, VALID, 4, "maxpool1_VALID");
+//BM_MaxPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, VALID, 4, "maxpool4_VALID");
+//BM_MaxPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, VALID, 4, "maxpool10_VALID");
+//BM_MaxPoolFwdCPU(32, 112, 112, 64, 3, 3, 2, SAME, 4, "maxpool0_SAME");
+//BM_MaxPoolFwdCPU(32, 56, 56, 192, 3, 3, 2, SAME, 4, "maxpool1_SAME");
+//BM_MaxPoolFwdCPU(32, 28, 28, 352, 3, 3, 2, SAME, 4, "maxpool4_SAME");
+//BM_MaxPoolFwdCPU(32, 14, 14, 576, 3, 3, 2, SAME, 4, "maxpool10_SAME");
 
 static void BM_MaxPoolBk(int iters, int batch_size, int rows, int cols,
                          int depth, int kernel_rows, int kernel_cols,
                          int stride, Padding padding, int num_threads,
                          bool use_gpu, const string& label) {
+ string device = "cpu";
+ if(use_gpu) {
+   if(IsGoogleCudaEnabled()) {
+     device = "gpu";
+   } else if (IsSYCLEnabled()) {
+     device = "sycl";
+   } else {
+     testing::SetLabel(
+         strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
+     return;
+   }
+ }
   auto root = Scope::NewRootScope().ExitOnError();
 
   int64 out_height, out_width, pad_rows, pad_cols;
@@ -1128,7 +1165,6 @@ static void BM_MaxPoolBk(int iters, int batch_size, int rows, int cols,
   TF_CHECK_OK(root.status());
   Graph* g = new Graph(OpRegistry::Global());
   TF_CHECK_OK(root.ToGraph(g));
-  string device = use_gpu ? "gpu" : "cpu";
   testing::UseRealTime();
   test::Benchmark(device, g).Run(iters);
 
@@ -1170,17 +1206,17 @@ static void BM_MaxPoolBk(int iters, int batch_size, int rows, int cols,
 // clang-format on
 
 // Shapes taken from the 2015/05/16 inception model
-BM_MaxPoolBkGPU(32, 147, 147, 64, 3, 3, 2, VALID, 1, "maxpool_grad0_VALID");
-BM_MaxPoolBkGPU(32, 71, 71, 192, 3, 3, 2, VALID, 1, "maxpool_grad1_VALID");
-BM_MaxPoolBkGPU(32, 35, 35, 288, 3, 3, 2, VALID, 1, "maxpool_grad2_VALID");
-BM_MaxPoolBkGPU(32, 17, 17, 1248, 3, 3, 2, VALID, 1, "maxpool_grad3_VALID");
-BM_MaxPoolBkGPU(32, 8, 8, 2048, 3, 3, 2, VALID, 1, "maxpool_grad4_VALID");
-
-BM_MaxPoolBkCPU(32, 147, 147, 64, 3, 3, 2, VALID, 1, "maxpool_grad0_VALID");
-BM_MaxPoolBkCPU(32, 71, 71, 192, 3, 3, 2, VALID, 1, "maxpool_grad1_VALID");
-BM_MaxPoolBkCPU(32, 35, 35, 288, 3, 3, 2, VALID, 1, "maxpool_grad2_VALID");
-BM_MaxPoolBkCPU(32, 17, 17, 1248, 3, 3, 2, VALID, 1, "maxpool_grad3_VALID");
-BM_MaxPoolBkCPU(32, 8, 8, 2048, 3, 3, 2, VALID, 1, "maxpool_grad4_VALID");
+//BM_MaxPoolBkGPU(32, 147, 147, 64, 3, 3, 2, VALID, 1, "maxpool_grad0_VALID");
+//BM_MaxPoolBkGPU(32, 71, 71, 192, 3, 3, 2, VALID, 1, "maxpool_grad1_VALID");
+//BM_MaxPoolBkGPU(32, 35, 35, 288, 3, 3, 2, VALID, 1, "maxpool_grad2_VALID");
+//BM_MaxPoolBkGPU(32, 17, 17, 1248, 3, 3, 2, VALID, 1, "maxpool_grad3_VALID");
+//BM_MaxPoolBkGPU(32, 8, 8, 2048, 3, 3, 2, VALID, 1, "maxpool_grad4_VALID");
+//
+//BM_MaxPoolBkCPU(32, 147, 147, 64, 3, 3, 2, VALID, 1, "maxpool_grad0_VALID");
+//BM_MaxPoolBkCPU(32, 71, 71, 192, 3, 3, 2, VALID, 1, "maxpool_grad1_VALID");
+//BM_MaxPoolBkCPU(32, 35, 35, 288, 3, 3, 2, VALID, 1, "maxpool_grad2_VALID");
+//BM_MaxPoolBkCPU(32, 17, 17, 1248, 3, 3, 2, VALID, 1, "maxpool_grad3_VALID");
+//BM_MaxPoolBkCPU(32, 8, 8, 2048, 3, 3, 2, VALID, 1, "maxpool_grad4_VALID");
 
 /*
 Relu Op
@@ -1245,14 +1281,14 @@ static void BM_ReluFloat(int iters, int batch_size, int rows, int cols,
   }                                                                      \
   BENCHMARK(BM_ReluFloat_##BS##_##IR##_##IC##_##ND##_##TH)
 
-BM_Relu(32, 112, 112, 64, 1, "relu0");
-BM_Relu(32, 56, 56, 192, 1, "relu1");
-BM_Relu(32, 28, 28, 352, 1, "relu4");
-BM_Relu(32, 14, 14, 576, 1, "relu10");
-BM_Relu(32, 112, 112, 64, 4, "relu0");
-BM_Relu(32, 56, 56, 192, 4, "relu1");
-BM_Relu(32, 28, 28, 352, 4, "relu4");
-BM_Relu(32, 14, 14, 576, 4, "relu10");
+//BM_Relu(32, 112, 112, 64, 1, "relu0");
+//BM_Relu(32, 56, 56, 192, 1, "relu1");
+//BM_Relu(32, 28, 28, 352, 1, "relu4");
+//BM_Relu(32, 14, 14, 576, 1, "relu10");
+//BM_Relu(32, 112, 112, 64, 4, "relu0");
+//BM_Relu(32, 56, 56, 192, 4, "relu1");
+//BM_Relu(32, 28, 28, 352, 4, "relu4");
+//BM_Relu(32, 14, 14, 576, 4, "relu10");
 
 static void BM_ImageNetSoftmaxFwd(int iters, int batch_size, int node_depth,
                                   int num_threads, bool use_gpu,
@@ -1290,18 +1326,30 @@ static void BM_ImageNetSoftmaxFwd(int iters, int batch_size, int node_depth,
   BENCHMARK(BM_ImageNetSoftmaxFwd_##BATCH_SIZE##_##NODE_DEPTH##_##TH##_##GPU)
 
 // Labels are taken from the 2014-July-24 version of imagenet
-BM_ImageNetSoftmaxFwd(32, 1008, 1, false, "softmax32");
-BM_ImageNetSoftmaxFwd(128, 1008, 1, false, "softmax128");
-BM_ImageNetSoftmaxFwd(32, 1008, 4, false, "softmax32");
-BM_ImageNetSoftmaxFwd(128, 1008, 4, false, "softmax128");
-BM_ImageNetSoftmaxFwd(32, 1008, 1, true, "softmax32");
-BM_ImageNetSoftmaxFwd(128, 1008, 1, true, "softmax128");
-BM_ImageNetSoftmaxFwd(8192, 1024, 1, true, "softmax32");
-BM_ImageNetSoftmaxFwd(8192, 32768, 1, true, "softmax128");
+//BM_ImageNetSoftmaxFwd(32, 1008, 1, false, "softmax32");
+//BM_ImageNetSoftmaxFwd(128, 1008, 1, false, "softmax128");
+//BM_ImageNetSoftmaxFwd(32, 1008, 4, false, "softmax32");
+//BM_ImageNetSoftmaxFwd(128, 1008, 4, false, "softmax128");
+//BM_ImageNetSoftmaxFwd(32, 1008, 1, true, "softmax32");
+//BM_ImageNetSoftmaxFwd(128, 1008, 1, true, "softmax128");
+//BM_ImageNetSoftmaxFwd(8192, 1024, 1, true, "softmax32");
+//BM_ImageNetSoftmaxFwd(8192, 32768, 1, true, "softmax128");
 
 static void BM_TopK(int iters, int rows, int cols, int k, int num_threads,
                     bool use_gpu, const string& label) {
   testing::StopTiming();
+  string device = "cpu";
+  if(use_gpu) {
+    if(IsGoogleCudaEnabled()) {
+      device = "gpu";
+    } else if (IsSYCLEnabled()) {
+      device = "sycl";
+    } else {
+      testing::SetLabel(
+          strings::StrCat("Skipping GPU test (no --config=cuda): ", label));
+      return;
+    }
+  }
   auto root = Scope::NewRootScope().ExitOnError();
 
   Tensor input(DT_FLOAT, TensorShape({rows, cols}));
@@ -1315,7 +1363,6 @@ static void BM_TopK(int iters, int rows, int cols, int k, int num_threads,
   TF_CHECK_OK(root.status());
   Graph* g = new Graph(OpRegistry::Global());
   TF_CHECK_OK(root.ToGraph(g));
-  string device = use_gpu ? "gpu" : "cpu";
   SessionOptions opts;
   opts.config.set_inter_op_parallelism_threads(1);
   opts.config.set_intra_op_parallelism_threads(num_threads);
@@ -1348,48 +1395,48 @@ static void BM_TopK(int iters, int rows, int cols, int k, int num_threads,
 
 // clang-format on
 
-BM_TopKCPU(1, 100, 1, 16, "topk_r_1_c_100_k_1_th_16");
-BM_TopKCPU(1, 100, 2, 16, "topk_r_1_c_100_k_2_th_16");
-BM_TopKCPU(1, 100, 10, 16, "topk_r_1_c_100_k_10_th_16");
-BM_TopKCPU(1, 100, 50, 16, "topk_r_1_c_100_k_50_th_16");
-BM_TopKCPU(1, 100, 100, 16, "topk_r_1_c_100_k_100_th_16");
-BM_TopKCPU(32, 100, 1, 16, "topk_r_32_c_100_k_1_th_16");
-BM_TopKCPU(32, 100, 2, 16, "topk_r_32_c_100_k_2_th_16");
-BM_TopKCPU(32, 100, 10, 16, "topk_r_32_c_100_k_10_th_16");
-BM_TopKCPU(32, 100, 50, 16, "topk_r_32_c_100_k_50_th_16");
-BM_TopKCPU(32, 100, 100, 16, "topk_r_32_c_100_k_100_th_16");
-BM_TopKCPU(128, 100, 1, 16, "topk_r_128_c_100_k_1_th_16");
-BM_TopKCPU(128, 100, 2, 16, "topk_r_128_c_100_k_2_th_16");
-BM_TopKCPU(128, 100, 10, 16, "topk_r_128_c_100_k_10_th_16");
-BM_TopKCPU(128, 100, 50, 16, "topk_r_128_c_100_k_50_th_16");
-BM_TopKCPU(128, 100, 100, 16, "topk_r_128_c_100_k_100_th_16");
-BM_TopKCPU(128, 1000, 1, 16, "topk_r_128_c_1000_k_1_th_16");
-BM_TopKCPU(128, 1000, 2, 16, "topk_r_128_c_1000_k_2_th_16");
-BM_TopKCPU(128, 1000, 10, 16, "topk_r_128_c_1000_k_10_th_16");
-BM_TopKCPU(128, 1000, 50, 16, "topk_r_128_c_1000_k_50_th_16");
-BM_TopKCPU(128, 1000, 100, 16, "topk_r_128_c_1000_k_100_th_16");
-BM_TopKCPU(128, 1000, 500, 16, "topk_r_128_c_1000_k_500_th_16");
-BM_TopKCPU(128, 1000, 1000, 16, "topk_r_128_c_1000_k_1000_th_16");
+//BM_TopKCPU(1, 100, 1, 16, "topk_r_1_c_100_k_1_th_16");
+//BM_TopKCPU(1, 100, 2, 16, "topk_r_1_c_100_k_2_th_16");
+//BM_TopKCPU(1, 100, 10, 16, "topk_r_1_c_100_k_10_th_16");
+//BM_TopKCPU(1, 100, 50, 16, "topk_r_1_c_100_k_50_th_16");
+//BM_TopKCPU(1, 100, 100, 16, "topk_r_1_c_100_k_100_th_16");
+//BM_TopKCPU(32, 100, 1, 16, "topk_r_32_c_100_k_1_th_16");
+//BM_TopKCPU(32, 100, 2, 16, "topk_r_32_c_100_k_2_th_16");
+//BM_TopKCPU(32, 100, 10, 16, "topk_r_32_c_100_k_10_th_16");
+//BM_TopKCPU(32, 100, 50, 16, "topk_r_32_c_100_k_50_th_16");
+//BM_TopKCPU(32, 100, 100, 16, "topk_r_32_c_100_k_100_th_16");
+//BM_TopKCPU(128, 100, 1, 16, "topk_r_128_c_100_k_1_th_16");
+//BM_TopKCPU(128, 100, 2, 16, "topk_r_128_c_100_k_2_th_16");
+//BM_TopKCPU(128, 100, 10, 16, "topk_r_128_c_100_k_10_th_16");
+//BM_TopKCPU(128, 100, 50, 16, "topk_r_128_c_100_k_50_th_16");
+//BM_TopKCPU(128, 100, 100, 16, "topk_r_128_c_100_k_100_th_16");
+//BM_TopKCPU(128, 1000, 1, 16, "topk_r_128_c_1000_k_1_th_16");
+//BM_TopKCPU(128, 1000, 2, 16, "topk_r_128_c_1000_k_2_th_16");
+//BM_TopKCPU(128, 1000, 10, 16, "topk_r_128_c_1000_k_10_th_16");
+//BM_TopKCPU(128, 1000, 50, 16, "topk_r_128_c_1000_k_50_th_16");
+//BM_TopKCPU(128, 1000, 100, 16, "topk_r_128_c_1000_k_100_th_16");
+//BM_TopKCPU(128, 1000, 500, 16, "topk_r_128_c_1000_k_500_th_16");
+//BM_TopKCPU(128, 1000, 1000, 16, "topk_r_128_c_1000_k_1000_th_16");
 
 // From NMT Codebase:
 //   batch_sizes: 16, 128
 //   vocab_sizes: 10000 for small dataset, 35000 for large.
 //   beam_widths: 1, 2, 5, 10
-BM_TopKCPU(16, 10000, 10000, 16, "topk_nmt_r_16_c_10000_k_10000_th_16");
-BM_TopKCPU(16, 20000, 20000, 16, "topk_nmt_r_16_c_20000_k_20000_th_16");
-BM_TopKCPU(16, 50000, 50000, 16, "topk_nmt_r_16_c_50000_k_50000_th_16");
-BM_TopKCPU(16, 100000, 100000, 16, "topk_nmt_r_16_c_100000_k_100000_th_16");
-BM_TopKCPU(16, 35000, 35000, 16, "topk_nmt_r_16_c_35000_k_35000_th_16");
-BM_TopKCPU(16, 70000, 70000, 16, "topk_nmt_r_16_c_70000_k_70000_th_16");
-BM_TopKCPU(16, 175000, 175000, 16, "topk_nmt_r_16_c_175000_k_175000_th_16");
-BM_TopKCPU(16, 350000, 350000, 16, "topk_nmt_r_16_c_350000_k_350000_th_16");
-BM_TopKCPU(128, 10000, 10000, 16, "topk_nmt_r_128_c_10000_k_10000_th_16");
-BM_TopKCPU(128, 20000, 20000, 16, "topk_nmt_r_128_c_20000_k_20000_th_16");
-BM_TopKCPU(128, 50000, 50000, 16, "topk_nmt_r_128_c_50000_k_50000_th_16");
-BM_TopKCPU(128, 100000, 100000, 16, "topk_nmt_r_128_c_100000_k_100000_th_16");
-BM_TopKCPU(128, 35000, 35000, 16, "topk_nmt_r_128_c_35000_k_35000_th_16");
-BM_TopKCPU(128, 70000, 70000, 16, "topk_nmt_r_128_c_70000_k_70000_th_16");
-BM_TopKCPU(128, 175000, 175000, 16, "topk_nmt_r_128_c_175000_k_175000_th_16");
-BM_TopKCPU(128, 350000, 350000, 16, "topk_nmt_r_128_c_350000_k_350000_th_16");
+//BM_TopKCPU(16, 10000, 10000, 16, "topk_nmt_r_16_c_10000_k_10000_th_16");
+//BM_TopKCPU(16, 20000, 20000, 16, "topk_nmt_r_16_c_20000_k_20000_th_16");
+//BM_TopKCPU(16, 50000, 50000, 16, "topk_nmt_r_16_c_50000_k_50000_th_16");
+//BM_TopKCPU(16, 100000, 100000, 16, "topk_nmt_r_16_c_100000_k_100000_th_16");
+//BM_TopKCPU(16, 35000, 35000, 16, "topk_nmt_r_16_c_35000_k_35000_th_16");
+//BM_TopKCPU(16, 70000, 70000, 16, "topk_nmt_r_16_c_70000_k_70000_th_16");
+//BM_TopKCPU(16, 175000, 175000, 16, "topk_nmt_r_16_c_175000_k_175000_th_16");
+//BM_TopKCPU(16, 350000, 350000, 16, "topk_nmt_r_16_c_350000_k_350000_th_16");
+//BM_TopKCPU(128, 10000, 10000, 16, "topk_nmt_r_128_c_10000_k_10000_th_16");
+//BM_TopKCPU(128, 20000, 20000, 16, "topk_nmt_r_128_c_20000_k_20000_th_16");
+//BM_TopKCPU(128, 50000, 50000, 16, "topk_nmt_r_128_c_50000_k_50000_th_16");
+//BM_TopKCPU(128, 100000, 100000, 16, "topk_nmt_r_128_c_100000_k_100000_th_16");
+//BM_TopKCPU(128, 35000, 35000, 16, "topk_nmt_r_128_c_35000_k_35000_th_16");
+//BM_TopKCPU(128, 70000, 70000, 16, "topk_nmt_r_128_c_70000_k_70000_th_16");
+//BM_TopKCPU(128, 175000, 175000, 16, "topk_nmt_r_128_c_175000_k_175000_th_16");
+//BM_TopKCPU(128, 350000, 350000, 16, "topk_nmt_r_128_c_350000_k_350000_th_16");
 
 }  // namespace tensorflow

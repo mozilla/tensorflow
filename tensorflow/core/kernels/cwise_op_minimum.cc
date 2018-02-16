@@ -35,7 +35,11 @@ REGISTER_KERNEL_BUILDER(Name("Minimum")
 #endif
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER3(BinaryOp, SYCL, "Minimum", functor::minimum, float, double, int64);
+REGISTER(BinaryOp, SYCL, "Minimum", functor::minimum, int64);
+#define REGISTER_SYCL(type) \
+  REGISTER(BinaryOp, SYCL, "Minimum", functor::minimum, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 REGISTER_KERNEL_BUILDER(Name("Minimum")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")

@@ -60,12 +60,12 @@ TF_CALL_bool(REGISTER_GPU_KERNEL);
                               .TypeConstraint<type>("T")        \
                               .TypeConstraint<int64>("Tshape"), \
                           ReshapeOp);
-REGISTER_SYCL_KERNEL(float)
-REGISTER_SYCL_KERNEL(double)
-REGISTER_SYCL_KERNEL(uint8)
-REGISTER_SYCL_KERNEL(int8)
-REGISTER_SYCL_KERNEL(int64)
-REGISTER_SYCL_KERNEL(uint16)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNEL);
+TF_CALL_bool(REGISTER_SYCL_KERNEL);
+TF_CALL_int8(REGISTER_SYCL_KERNEL);
+TF_CALL_int64(REGISTER_SYCL_KERNEL);
+TF_CALL_uint8(REGISTER_SYCL_KERNEL);
+TF_CALL_uint16(REGISTER_SYCL_KERNEL);
 
 REGISTER_KERNEL_BUILDER(Name("Reshape")
                             .Device(DEVICE_SYCL)

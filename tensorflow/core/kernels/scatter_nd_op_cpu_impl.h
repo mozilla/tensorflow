@@ -168,6 +168,91 @@ TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_MATH)
 #undef REGISTER_SCATTER_ND_FULL
 
 #ifdef TENSORFLOW_USE_SYCL
+namespace {
+template <typename PTR, typename T, scatter_nd_op::UpdateOp Op>
+struct LeftUpdateSYCL {
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC void operator()(PTR out, const T& val);
+};
+
+template <typename PTR, typename T>
+struct LeftUpdateSYCL<PTR, T, scatter_nd_op::UpdateOp::ASSIGN> {
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC void operator()(PTR out, const T& val) {
+    *out = val;
+  }
+};
+
+template <typename PTR, typename T>
+struct LeftUpdateSYCL<PTR, T, scatter_nd_op::UpdateOp::ADD> {
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC void operator()(PTR out, const T& val) {
+    *out += val;
+  }
+};
+
+template <typename PTR, typename T>
+struct LeftUpdateSYCL<PTR, T, scatter_nd_op::UpdateOp::SUB> {
+  EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC void operator()(PTR out, const T& val) {
+    *out -= val;
+  }
+};
+}  // namespace
+
+template <typename T, typename Index, scatter_nd_op::UpdateOp op, int IXDIM>
+struct ScatterNdKernel {
+  using write_accessor =
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::write,
+                         cl::sycl::access::target::global_buffer>;
+  using read_accessor =
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read,
+                         cl::sycl::access::target::global_buffer>;
+
+  ScatterNdKernel(
+      const read_accessor indices, const read_accessor updates,
+      write_accessor out,
+      const Eigen::array<Eigen::DenseIndex, IXDIM> output_shape_prefix,
+      const Eigen::array<int64, IXDIM> batch_strides, const int64 num_indices,
+      const Index slice_size)
+      : indices_(indices),
+        updates_(updates),
+        out_(out),
+        output_shape_prefix_(output_shape_prefix),
+        batch_strides_(batch_strides),
+        num_indices_(num_indices),
+        slice_size_(slice_size) {}
+
+  void operator()(cl::sycl::item<1> id) {
+    const T* updates = ConvertToActualTypeSycl(T, updates_);
+    const Index* indices = ConvertToActualTypeSycl(Index, indices_);
+    T* out = ConvertToActualTypeSycl(T, out_);
+
+    auto update = LeftUpdateSYCL<decltype(out), T, op>();
+
+    for (Index index = 0; index < num_indices_; index++) {
+      Index i = 0;
+      bool out_of_bounds = false;
+      for (int dim = 0; dim < IXDIM; ++dim) {
+        int offset = (IXDIM * index + dim);
+        const Index ix_d = indices[offset];
+        out_of_bounds |= !FastBoundsCheck(ix_d, output_shape_prefix_[dim]);
+        i += ix_d * batch_strides_[dim] * slice_size_;
+      }
+      if (!out_of_bounds) {
+        for (int si = 0; si < slice_size_; si++) {
+          update(out + i + si, updates[index * slice_size_ + si]);
+        }
+      }
+    }
+  }
+
+ private:
+  const read_accessor indices_;
+  const read_accessor updates_;
+  write_accessor out_;
+  const Eigen::array<Eigen::DenseIndex, IXDIM> output_shape_prefix_;
+  const Eigen::array<int64, IXDIM> batch_strides_;
+  const int64 num_indices_;
+  const Index slice_size_;
+};
+
 // Implementation of update functor for SYCL.
 template <typename T, typename Index, scatter_nd_op::UpdateOp OP, int IXDIM>
 struct ScatterNdFunctor<SYCLDevice, T, Index, OP, IXDIM> {
@@ -178,13 +263,10 @@ struct ScatterNdFunctor<SYCLDevice, T, Index, OP, IXDIM> {
       typename TTypes<Index, 2>::ConstTensor Tindices,
       typename TTypes<T, 2>::ConstTensor Tupdates,
       typename TTypes<T, 2>::Tensor Toutput) {
-    // error_loc is -1 if there's no out-of-bounds index,
-    // otherwise it is the location of an OOB index in Tindices.
-    Index error_loc = -1;
-
     const Eigen::DenseIndex batch_size = Tindices.dimension(0);
 
-    Index batch_strides[IXDIM];
+    // Index batch_strides[IXDIM];
+    Eigen::array<int64, IXDIM> batch_strides;
     for (int dim = IXDIM - 1; dim >= 0; --dim) {
       if (dim == IXDIM - 1) {
         batch_strides[dim] = 1;
@@ -194,28 +276,29 @@ struct ScatterNdFunctor<SYCLDevice, T, Index, OP, IXDIM> {
       }
     }
 
-    for (Eigen::DenseIndex loc = 0; loc < batch_size; ++loc) {
-      Index i = 0;
-      bool out_of_bounds = false;
-      for (int dim = 0; dim < IXDIM; ++dim) {
-        const Index ix_d = internal::SubtleMustCopy(Tindices(loc, dim));
-        out_of_bounds |= !FastBoundsCheck(ix_d, output_shape_prefix[dim]);
-        i += ix_d * batch_strides[dim];
-      }
-      if (TF_PREDICT_FALSE(out_of_bounds)) {
-        error_loc = loc;
-        break;
-      } else {
-        auto input_chip = Toutput.template chip<0>(i);
-        auto output_chip = input_chip.device(d);
-        auto update_chip = Tupdates.template chip<0>(loc);
-        update_executor::UpdateExecutor<
-            decltype(input_chip), decltype(update_chip), decltype(output_chip),
-            OP>::Execute(input_chip, update_chip, output_chip);
-      }
-    }
+    const int num_threads = Toutput.size();
 
-    return error_loc;
+    auto indices_buffer = d.get_sycl_buffer(Tindices.data());
+    auto updates_buffer = d.get_sycl_buffer(Tupdates.data());
+    auto output_buffer = d.get_sycl_buffer(Toutput.data());
+
+    d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+      auto indices_access =
+          indices_buffer.template get_access<cl::sycl::access::mode::read>(cgh);
+      auto updates_access =
+          updates_buffer.template get_access<cl::sycl::access::mode::read>(cgh);
+
+      auto output_access =
+          output_buffer.template get_access<cl::sycl::access::mode::write>(cgh);
+
+      ScatterNdKernel<T, Index, OP, IXDIM> kernel(
+          indices_access, updates_access, output_access, output_shape_prefix,
+          batch_strides, batch_size, slice_size);
+
+      cgh.parallel_for(cl::sycl::range<1>(num_threads), kernel);
+    });
+
+    return -1;
   }
 };
 
@@ -241,10 +324,8 @@ struct ScatterNdFunctor<SYCLDevice, T, Index, OP, IXDIM> {
   REGISTER_SCATTER_ND_INDEX_SYCL(type, scatter_nd_op::UpdateOp::ADD); \
   REGISTER_SCATTER_ND_INDEX_SYCL(type, scatter_nd_op::UpdateOp::SUB);
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ND_UPDATE_SYCL)
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ND_MATH_SYCL)
-REGISTER_SCATTER_ND_UPDATE_SYCL(int32);
-REGISTER_SCATTER_ND_MATH_SYCL(int32);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_UPDATE_SYCL)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_MATH_SYCL)
 
 #undef REGISTER_SCATTER_ND_MATH_SYCL
 #undef REGISTER_SCATTER_ND_UPDATE_SYCL

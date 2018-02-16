@@ -23,6 +23,9 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T, bool USE_CUBLAS>
 class GRUCellBlockOp : public OpKernel {
@@ -166,6 +169,16 @@ class GRUCellBlockOp : public OpKernel {
 
 REGISTER_KERNEL(float);
 #undef REGISTER_KERNEL
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                             \
+  REGISTER_KERNEL_BUILDER(                                             \
+      Name("GRUBlockCell").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      GRUCellBlockOp<SYCLDevice, T, false>);
+
+REGISTER_KERNEL(float);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T, bool USE_CUBLAS>
 class GRUBlockCellGradOp : public OpKernel {
@@ -378,6 +391,16 @@ class GRUBlockCellGradOp : public OpKernel {
 
 REGISTER_KERNEL(float);
 #undef REGISTER_KERNEL
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_KERNEL(T)                                                 \
+  REGISTER_KERNEL_BUILDER(                                                 \
+      Name("GRUBlockCellGrad").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      GRUBlockCellGradOp<SYCLDevice, T, false>);
+
+REGISTER_KERNEL(float);
+#undef REGISTER_KERNEL
+#endif  // TENSORFLOW_USE_SYCL
 
 // GPU support.
 #if GOOGLE_CUDA

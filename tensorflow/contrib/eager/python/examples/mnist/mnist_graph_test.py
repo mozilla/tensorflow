@@ -23,7 +23,8 @@ from tensorflow.contrib.eager.python.examples.mnist import mnist
 
 
 def data_format():
-  return "channels_first" if tf.test.is_gpu_available() else "channels_last"
+  is_gpu = tf.test.is_gpu_available(cuda_only=True)
+  return "channels_first" if is_gpu else "channels_last"
 
 
 class MNISTGraphTest(tf.test.TestCase):

@@ -27,6 +27,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
 from tensorflow.python.platform import test
+from tensorflow.python.framework import test_util
 
 
 class ClusterTest(test.TestCase):
@@ -136,6 +137,8 @@ class ClusterTest(test.TestCase):
       self.assertEqual(op_names, sorted(op_names))
 
   def testSupportDevices(self):
+    gpu_type = test_util.gpu_device_type()
+    gpu_name = test_util.gpu_device_name()
     with ops.Graph().as_default() as g:
       a = random_ops.random_uniform(shape=(2, 3))
       b = random_ops.random_uniform(shape=(2, 3))
@@ -148,29 +151,29 @@ class ClusterTest(test.TestCase):
       grappler_item = item.Item(mg)
 
       device_properties = device_properties_pb2.DeviceProperties(
-          type='GPU', frequency=1000, num_cores=60)
+          type=gpu_type, frequency=1000, num_cores=60)
       named_gpu = device_properties_pb2.NamedDevice(
-          properties=device_properties, name='/GPU:0')
+          properties=device_properties, name=gpu_name)
       device_properties = device_properties_pb2.DeviceProperties(
           type='CPU', frequency=3000, num_cores=6)
       named_cpu = device_properties_pb2.NamedDevice(
           properties=device_properties, name='/CPU:0')
       virtual_cluster = cluster.Cluster(devices=[named_cpu, named_gpu])
       supported_dev = virtual_cluster.GetSupportedDevices(grappler_item)
-      self.assertEqual(supported_dev['add'], ['/CPU:0', '/GPU:0'])
-      self.assertEqual(supported_dev['Sum'], ['/CPU:0', '/GPU:0'])
-      self.assertEqual(supported_dev['range'], ['/CPU:0', '/GPU:0'])
+      self.assertEqual(supported_dev['add'], ['/CPU:0', gpu_name])
+      self.assertEqual(supported_dev['Sum'], ['/CPU:0', gpu_name])
+      self.assertEqual(supported_dev['range'], ['/CPU:0', gpu_name])
 
       real_cluster = cluster.Cluster()
       supported_dev = real_cluster.GetSupportedDevices(grappler_item)
       if test.is_gpu_available():
         self.assertEqual(supported_dev['add'], [
             '/job:localhost/replica:0/task:0/device:CPU:0',
-            '/job:localhost/replica:0/task:0/device:GPU:0'
+            '/job:localhost/replica:0/task:0'+gpu_name
         ])
         self.assertEqual(supported_dev['Sum'], [
             '/job:localhost/replica:0/task:0/device:CPU:0',
-            '/job:localhost/replica:0/task:0/device:GPU:0'
+            '/job:localhost/replica:0/task:0'+gpu_name
         ])
         # The axis tensor must reside on the host
         self.assertEqual(supported_dev['range'],

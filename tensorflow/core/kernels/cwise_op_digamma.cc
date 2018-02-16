@@ -15,6 +15,12 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/cwise_ops_common.h"
 
+// Erfc is not implemented for SYCL
+#define EIGEN_DONT_VECTORIZE
+#ifdef EIGEN_USE_SYCL
+ #undef EIGEN_USE_SYCL
+#endif  // EIGEN_USE_SYCL
+
 namespace tensorflow {
 REGISTER3(UnaryOp, CPU, "Digamma", functor::digamma, float, Eigen::half,
           double);

@@ -44,9 +44,17 @@ SingleMachine::SingleMachine(int timeout_s, int num_cpu_cores, int num_gpus)
       Env::Default(), SanitizeThreadSuffix("single_machine"), 2));
 
   (*options_.config.mutable_device_count())["CPU"] = 1;
+#if GOOGLE_CUDA
   if (num_gpus > 0) {
     (*options_.config.mutable_device_count())["GPU"] = num_gpus;
   }
+#endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+if (num_gpus > 0) {
+  (*options_.config.mutable_device_count())["SYCL"] = num_gpus;
+}
+#endif  // TENSORFLOW_USE_SYCL
   CHECK_GE(num_cpu_cores, 1);
   options_.config.set_intra_op_parallelism_threads(num_cpu_cores);
   // Create a session specific thread pool to ensure the threads are reset when

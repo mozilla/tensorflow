@@ -40,7 +40,7 @@ class SpaceToDepthTest(test.TestCase):
       # test NHWC (default) on CPU
       x_tf = array_ops.space_to_depth(input_nhwc, block_size)
       self.assertAllEqual(x_tf.eval(), outputs)
-    if test.is_gpu_available():
+    if test.is_gpu_available(cuda_only=True):
       with self.test_session(use_gpu=True):
         # test NHWC (default) on GPU
         x_tf = array_ops.space_to_depth(input_nhwc, block_size)
@@ -259,7 +259,7 @@ class SpaceToDepthTest(test.TestCase):
     self.compareToTranspose(1, 2, 3, 2, 2, "NHWC", False)
     self.compareToTranspose(1, 2, 3, 2, 3, "NHWC", False)
 
-    if not test.is_gpu_available():
+    if not test.is_gpu_available(cuda_only=True):
       tf_logging.info("skipping gpu tests since gpu not available")
       return
 
@@ -279,7 +279,7 @@ class SpaceToDepthGradientTest(test.TestCase):
   # Check the gradients.
   def _checkGrad(self, x, block_size, data_format):
     # NCHW is implemented for only GPU.
-    if data_format == "NCHW" and not test.is_gpu_available():
+    if data_format == "NCHW" and not test.is_gpu_available(cuda_only=True):
       return
 
     assert 4 == x.ndim
@@ -315,11 +315,21 @@ class SpaceToDepthGradientTest(test.TestCase):
   def testSmall(self):
     block_size = 2
     self._compare(1, 2, 3, 5, block_size, "NHWC")
+
+    if not test.is_gpu_available(cuda_only=True):
+      tf_logging.info("skipping gpu tests since gpu not available")
+      return
+
     self._compare(1, 2, 3, 5, block_size, "NCHW")
 
   def testSmall2(self):
     block_size = 2
     self._compare(2, 4, 3, 2, block_size, "NHWC")
+
+    if not test.is_gpu_available(cuda_only=True):
+      tf_logging.info("skipping gpu tests since gpu not available")
+      return
+
     self._compare(2, 4, 3, 2, block_size, "NCHW")
 
 

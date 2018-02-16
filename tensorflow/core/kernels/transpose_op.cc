@@ -307,7 +307,9 @@ Status ConjugateTransposeSyclOp::DoTranspose(OpKernelContext* ctx,
                               .TypeConstraint<T>("T") \
                               .HostMemory("perm"),    \
                           ConjugateTransposeSyclOp);
-TF_CALL_POD_TYPES(REGISTER);
+TF_CALL_INTEGRAL_TYPES(REGISTER);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
+TF_CALL_bool(REGISTER);
 #undef REGISTER
-#endif
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

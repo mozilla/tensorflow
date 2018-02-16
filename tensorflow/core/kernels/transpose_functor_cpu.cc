@@ -181,7 +181,7 @@ template <typename T, bool conjugate>
 struct Transpose<SYCLDevice, T, conjugate> {
   static void run(const SYCLDevice& d, const Tensor& in,
                   const gtl::ArraySlice<int32> perm, Tensor* out) {
-    internal::TransposeSycl(d, in, perm, conjugate, out);
+    internal::TransposeSYCL<T>(d, in, perm, conjugate, out);
   }
 };
 

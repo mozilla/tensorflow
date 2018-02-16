@@ -104,40 +104,67 @@ struct LSTMBlockCell {
 
   int cell_size() const { return cell_size_; }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> icfo_i_offsets() const {
-    return {0, 0};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> icfo_i_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = 0;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> icfo_c_offsets() const {
-    return {0, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> icfo_c_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = cell_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> icfo_f_offsets() const {
-    return {0, cell_size_ * 2};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> icfo_f_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = cell_size_ * 2;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> icfo_o_offsets() const {
-    return {0, cell_size_ * 3};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> icfo_o_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = cell_size_ * 3;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> cell_extents() const {
-    return {batch_size_, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> cell_extents() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = cell_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> xh_x_offsets() const {
-    return {0, 0};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> xh_x_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = 0;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> xh_x_extents() const {
-    return {batch_size_, input_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> xh_x_extents() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = input_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> xh_h_offsets() const {
-    return {0, input_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> xh_h_offsets() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = 0;
+    ret[1] = input_size_;
+    return ret;
   }
 
-  inline Eigen::array<Eigen::DenseIndex, 2> xh_h_extents() const {
-    return {batch_size_, cell_size_};
+  inline Eigen::DSizes<Eigen::DenseIndex, 2> xh_h_extents() const {
+    Eigen::DSizes<Eigen::DenseIndex, 2> ret;
+    ret[0] = batch_size_;
+    ret[1] = cell_size_;
+    return ret;
   }
 
  protected:

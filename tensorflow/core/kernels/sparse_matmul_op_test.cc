@@ -13,6 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#ifdef EIGEN_USE_SYCL
+#define EIGEN_DONT_VECTORIZE_SYCL
+#endif  // EIGEN_USE_SYCL
+
 #include "tensorflow/core/kernels/sparse_matmul_op.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/bfloat16.h"

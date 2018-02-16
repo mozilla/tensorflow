@@ -51,10 +51,10 @@ limitations under the License.
 // debugging and understanding the algorithm. Use instead of FastGemmFunctor in
 // the Im2ColConvFunctor template definition inside the op registration to
 // enable. Assumes row-major ordering of the values in memory.
-template <class T1, class T2, class T3>
+template <class Device, class T1, class T2, class T3>
 class ReferenceGemmFunctor {
  public:
-  void operator()(tensorflow::OpKernelContext* ctx, size_t m, size_t n,
+  void operator()(Device& d, size_t m, size_t n,
                   size_t k, const T1* a, size_t lda, const T2* b, size_t ldb,
                   T3* c, size_t ldc) {
     const size_t a_i_stride = lda;
@@ -85,10 +85,10 @@ class ReferenceGemmFunctor {
 // required by the Im2ColConvFunctor class. We supply the two input and one
 // output types so that the accumulator can potentially be higher-precision than
 // the inputs, even though we don't currently take advantage of this.
-template <class T1, class T2, class T3>
+template <class Device, class T1, class T2, class T3>
 class FastGemmFunctor {
  public:
-  void operator()(tensorflow::OpKernelContext* ctx, size_t m, size_t n,
+  void operator()(Device& d, size_t m, size_t n,
                   size_t k, const T1* a, size_t lda, const T2* b, size_t ldb,
                   T3* c, size_t ldc) {
     typename tensorflow::TTypes<const T1>::Matrix a_matrix(a, m, k);
@@ -98,17 +98,16 @@ class FastGemmFunctor {
     Eigen::array<Eigen::IndexPair<Eigen::DenseIndex>, 1> dim_pair;
     dim_pair[0].first = 1;
     dim_pair[0].second = 0;
-    c_matrix.device(ctx->eigen_device<Eigen::ThreadPoolDevice>()) =
-        a_matrix.contract(b_matrix, dim_pair);
+    c_matrix.device(d) = a_matrix.contract(b_matrix, dim_pair);
   }
 };
 
 // If we have a fast CBLAS library, use its implementation through a wrapper.
 #if defined(USE_CBLAS_GEMM)
-template <>
-class FastGemmFunctor<float, float, float> {
+template <class Device>
+class FastGemmFunctor<Device, float, float, float> {
  public:
-  void operator()(tensorflow::OpKernelContext* ctx, size_t m, size_t n,
+  void operator()(Device& d, size_t m, size_t n,
                   size_t k, const float* a, size_t lda, const float* b,
                   size_t ldb, float* c, size_t ldc) {
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, m, n, k, 1.0f, a,
