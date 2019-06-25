@@ -206,6 +206,12 @@ def if_not_lgpl_restricted(a):
         "//conditions:default": [],
     })
 
+def if_rpi3(a):
+  return select({
+      "//tensorflow:rpi3": a,
+      "//conditions:default": [],
+  })
+
 def if_not_windows(a):
     return select({
         clean_dep("//tensorflow:windows"): [],

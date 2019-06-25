@@ -167,6 +167,46 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "LinaroArmGcc49",
+        build_file = clean_dep("//compilers:linaro-gcc49-armeabi.BUILD"),
+        strip_prefix = "gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/arm-linux-gnueabihf/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz",
+        ],
+        sha256 = "22914118fd963f953824b58107015c6953b5bbdccbdcf25ad9fd9a2f9f11ac07",
+    )
+
+    tf_http_archive(
+        name = "LinaroArmGcc72",
+        build_file = clean_dep("//compilers:linaro-gcc72-armeabi.BUILD"),
+        strip_prefix = "gcc-linaro-7.2.1-2017.11-x86_64_arm-linux-gnueabihf/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/arm-linux-gnueabihf/gcc-linaro-7.2.1-2017.11-x86_64_arm-linux-gnueabihf.tar.xz",
+        ],
+        sha256 = "cee0087b1f1205b73996651b99acd3a926d136e71047048f1758ffcec69b1ca2",
+    )
+
+    tf_http_archive(
+        name = "LinaroAarch64Gcc49",
+        build_file = clean_dep("//compilers:linaro-gcc49-aarch64.BUILD"),
+        strip_prefix = "gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-linux-gnu/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu.tar.xz",
+        ],
+        sha256 = "d1f2761b697e6b49f5db1ec0cd48d2fd98224be8cb5ef182093f691e99c923eb",
+    )
+
+    tf_http_archive(
+        name = "LinaroAarch64Gcc72",
+        build_file = clean_dep("//compilers:linaro-gcc72-aarch64.BUILD"),
+        strip_prefix = "gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu.tar.xz",
+        ],
+        sha256 = "20181f828e1075f1a493947ff91e82dd578ce9f8638fbdfc39e24b62857d8f8d",
+    )
+
+    tf_http_archive(
         name = "libxsmm_archive",
         build_file = clean_dep("//third_party:libxsmm.BUILD"),
         sha256 = "cd8532021352b4a0290d209f7f9bfd7c2411e08286a893af3577a43457287bfa",

@@ -792,6 +792,8 @@ def tf_additional_binary_deps():
 def tf_additional_numa_deps():
     return select({
         "//tensorflow:android": [],
+        "//tensorflow:rpi3": [],
+        "//tensorflow:rpi3-armv8": [],
         "//tensorflow:ios": [],
         "//tensorflow:windows": [],
         "//tensorflow:macos": [],
@@ -803,6 +805,8 @@ def tf_additional_numa_deps():
 def tf_additional_numa_copts():
     return select({
         "//tensorflow:android": [],
+        "//tensorflow:rpi3": [],
+        "//tensorflow:rpi3-armv8": [],
         "//tensorflow:ios": [],
         "//tensorflow:windows": [],
         "//tensorflow:macos": [],
