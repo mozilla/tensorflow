@@ -53,8 +53,8 @@ payload:
         cd $TASKCLUSTER_TASK_DIR/DeepSpeech/tf && git checkout --quiet ${event.head.sha} && cd $TASKCLUSTER_TASK_DIR &&
         $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-brew.sh &&
         $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-pip.sh &&
-        $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-setup.sh &&
-        $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-build.sh &&
+        $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-setup.sh ${build.args.tcsetup} &&
+        $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-build.sh ${build.args.tcbuild} &&
         $TASKCLUSTER_TASK_DIR/DeepSpeech/tf/tc-package.sh ;
         export TASKCLUSTER_TASK_EXIT_CODE=$? &&
         cd $TASKCLUSTER_TASK_DIR/../ && rm -fr tc-workdir/ && exit $TASKCLUSTER_TASK_EXIT_CODE
