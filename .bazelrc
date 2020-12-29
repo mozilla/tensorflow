@@ -219,6 +219,24 @@ build:rocm --crosstool_top=@local_config_rocm//crosstool:toolchain
 build:rocm --define=using_rocm=true --define=using_rocm_hipcc=true
 build:rocm --action_env TF_NEED_ROCM=1
 
+build --copt=-DTFLITE_WITH_RUY_GEMV
+
+build:rpi3 --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:rpi3 --crosstool_top=//third_party/toolchains/embedded/linaro-gcc72-armeabi:toolchain
+build:rpi3 --cpu=armv7a --define=target_system=rpi3
+build:rpi3 --copt=-march=armv7-a --copt=-mtune=cortex-a53 --copt=-mfloat-abi=hard --copt=-mfpu=neon-fp-armv8 --copt=-DRASPBERRY_PI --copt=-D_GLIBCXX_USE_CXX11_ABI=0 --copt=-std=gnu99 --copt=-mno-unaligned-access
+build:rpi3 --define=tensorflow_mkldnn_contraction_kernel=0
+build:rpi3 --define=runtime=tflite
+build:rpi3_opt --copt=-funsafe-math-optimizations --copt=-ftree-vectorize --copt=-pipe
+
+build:rpi3-armv8 --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:rpi3-armv8 --crosstool_top=//third_party/toolchains/embedded/linaro-gcc72-aarch64:toolchain
+build:rpi3-armv8 --cpu=aarch64 --define=target_system=rpi3-armv8
+build:rpi3-armv8 --copt=-march=armv8-a --copt=-mtune=cortex-a53 --copt=-DRASPBERRY_PI --copt=-D_GLIBCXX_USE_CXX11_ABI=0 --copt=-std=gnu99
+build:rpi3-armv8 --define=tensorflow_mkldnn_contraction_kernel=0
+build:rpi3-armv8 --define=runtime=tflite
+build:rpi3-armv8_opt --copt=-funsafe-math-optimizations --copt=-ftree-vectorize --copt=-pipe
+
 # Options extracted from configure script
 build:ngraph --define=with_ngraph_support=true
 build:numa --define=with_numa_support=true

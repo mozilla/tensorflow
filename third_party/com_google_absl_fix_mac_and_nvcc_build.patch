@@ -308,3 +308,16 @@ index 7a53c81..159b0f0 100644
      visibility = ["//visibility:public"],
      deps = [
          ":civil_time",
+diff --git a/absl/time/internal/cctz/include/cctz/civil_time_detail.h b/absl/time/internal/cctz/include/cctz/civil_time_detail.h
+index 4cde96f..dc80db7 100644
+--- a/absl/time/internal/cctz/include/cctz/civil_time_detail.h
++++ b/absl/time/internal/cctz/include/cctz/civil_time_detail.h
+@@ -23,7 +23,7 @@
+ #include "absl/base/config.h"
+ 
+ // Disable constexpr support unless we are in C++14 mode.
+-#if __cpp_constexpr >= 201304 || (defined(_MSC_VER) && _MSC_VER >= 1910)
++#if (!defined(NO_CONSTEXPR_FOR_YOU) && __cpp_constexpr >= 201304) || (defined(_MSC_VER) && _MSC_VER >= 1910)
+ #define CONSTEXPR_D constexpr  // data
+ #define CONSTEXPR_F constexpr  // function
+ #define CONSTEXPR_M constexpr  // member

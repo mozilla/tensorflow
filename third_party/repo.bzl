@@ -16,6 +16,8 @@
 
 _SINGLE_URL_WHITELIST = depset([
     "arm_compiler",
+    "LinaroArmGcc72",
+    "LinaroAarch64Gcc72",
 ])
 
 def _is_windows(ctx):

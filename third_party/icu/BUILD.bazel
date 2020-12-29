@@ -1,5 +1,8 @@
+# We make everything here private to make any dependencies on ICU become a build
+# failure and easier/faster to track down, as it's not needed for DeepSpeech and
+# causes linking problems on Windows.
 package(
-    default_visibility = ["//visibility:public"],
+    default_visibility = ["//visibility:private"],
 )
 
 licenses(["notice"])  # Apache 2.0

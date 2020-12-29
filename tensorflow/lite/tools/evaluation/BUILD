@@ -57,7 +57,6 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         "//tensorflow:fuchsia": [],
-        "//tensorflow:windows": [],
         "//conditions:default": [
             "//tensorflow/lite/delegates/xnnpack:xnnpack_delegate",
         ],

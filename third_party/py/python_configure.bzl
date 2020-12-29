@@ -210,7 +210,7 @@ def _create_local_python_repository(repository_ctx):
     python_lib = _get_python_lib(repository_ctx, python_bin)
     _check_python_lib(repository_ctx, python_lib)
     python_include = _get_python_include(repository_ctx, python_bin)
-    numpy_include = _get_numpy_include(repository_ctx, python_bin) + "/numpy"
+#    numpy_include = _get_numpy_include(repository_ctx, python_bin) + "/numpy"
     python_include_rule = _symlink_genrule_for_dir(
         repository_ctx,
         python_include,
@@ -233,12 +233,12 @@ def _create_local_python_repository(repository_ctx):
             [python_import_lib_src],
             [python_import_lib_name],
         )
-    numpy_include_rule = _symlink_genrule_for_dir(
-        repository_ctx,
-        numpy_include,
-        "numpy_include/numpy",
-        "numpy_include",
-    )
+    #numpy_include_rule = _symlink_genrule_for_dir(
+    #    repository_ctx,
+    #    numpy_include,
+    #    "numpy_include/numpy",
+    #    "numpy_include",
+    #)
 
     platform_constraint = ""
     if repository_ctx.attr.platform_constraint:
@@ -247,7 +247,7 @@ def _create_local_python_repository(repository_ctx):
         "%{PYTHON_BIN_PATH}": python_bin,
         "%{PYTHON_INCLUDE_GENRULE}": python_include_rule,
         "%{PYTHON_IMPORT_LIB_GENRULE}": python_import_lib_genrule,
-        "%{NUMPY_INCLUDE_GENRULE}": numpy_include_rule,
+        #"%{NUMPY_INCLUDE_GENRULE}": numpy_include_rule,
         "%{PLATFORM_CONSTRAINT}": platform_constraint,
     })
 

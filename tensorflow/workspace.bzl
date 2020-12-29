@@ -254,6 +254,26 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "LinaroArmGcc72",
+        build_file = clean_dep("//third_party/toolchains/embedded/linaro-gcc72-armeabi:linaro-gcc72-armeabi.BUILD"),
+        strip_prefix = "gcc-linaro-7.2.1-2017.11-x86_64_arm-linux-gnueabihf/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/arm-linux-gnueabihf/gcc-linaro-7.2.1-2017.11-x86_64_arm-linux-gnueabihf.tar.xz",
+        ],
+        sha256 = "cee0087b1f1205b73996651b99acd3a926d136e71047048f1758ffcec69b1ca2",
+    )
+
+    tf_http_archive(
+        name = "LinaroAarch64Gcc72",
+        build_file = clean_dep("//third_party/toolchains/embedded/linaro-gcc72-aarch64:linaro-gcc72-aarch64.BUILD"),
+        strip_prefix = "gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/",
+        urls = [
+            "https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu.tar.xz",
+        ],
+        sha256 = "20181f828e1075f1a493947ff91e82dd578ce9f8638fbdfc39e24b62857d8f8d",
+    )
+
+    tf_http_archive(
         name = "libxsmm_archive",
         build_file = clean_dep("//third_party:libxsmm.BUILD"),
         sha256 = "9c0af4509ea341d1ee2c6c19fc6f19289318c3bd4b17844efeb9e7f9691abf76",

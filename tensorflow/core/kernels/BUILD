@@ -5023,15 +5023,15 @@ cc_library(
         ":string_format_op",
         ":string_join_op",
         ":string_length_op",
-        ":string_lower_op",
+        # ":string_lower_op",
         ":string_ngrams_op",
         ":string_split_op",
         ":string_strip_op",
         ":string_to_hash_bucket_op",
-        ":string_upper_op",
+        # ":string_upper_op",
         ":substr_op",
-        ":unicode_ops",
-        ":unicode_script_op",
+        # ":unicode_ops",
+        # ":unicode_script_op",
         ":unsorted_segment_join_op",
     ],
 )
@@ -5044,7 +5044,7 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "@icu//:common",
+        # "@icu//:common",
     ],
 )
 
@@ -5200,7 +5200,7 @@ tf_kernel_library(
     prefix = "string_lower_op",
     deps = STRING_DEPS + [
         "@com_google_absl//absl/strings",
-        "@icu//:common",
+        # "@icu//:common",
     ],
 )
 
@@ -5209,7 +5209,7 @@ tf_kernel_library(
     prefix = "string_upper_op",
     deps = STRING_DEPS + [
         "@com_google_absl//absl/strings",
-        "@icu//:common",
+        # "@icu//:common",
     ],
 )
 
@@ -5273,7 +5273,7 @@ tf_kernel_library(
         "//tensorflow/core/framework:bounds_check",
         "//third_party/eigen3",
         "//third_party/icu/data:conversion_data",
-        "@icu//:common",
+        # "@icu//:common",
     ],
 )
 
@@ -6421,10 +6421,10 @@ filegroup(
             "mutex_ops.*",
             "batch_kernels.*",
             "regex_replace_op.cc",
-            "string_lower_op.cc",  # Requires ICU for unicode.
-            "string_upper_op.cc",  # Requires ICU for unicode.
+            # "string_lower_op.cc",  # Requires ICU for unicode.
+            # "string_upper_op.cc",  # Requires ICU for unicode.
             "unicode_ops.cc",
-            "unicode_script_op.cc",
+            # "unicode_script_op.cc",
             # Ops that are inherently incompatible with Android (e.g. tied to x86 platform).
             "xsmm_*",
             "nextafter_op.cc",
@@ -7351,7 +7351,7 @@ tf_kernel_library(
     srcs = ["unicode_script_op.cc"],
     deps = [
         "//tensorflow/core:framework",
-        "@icu//:common",
+        # "@icu//:common",
     ],
 )
 
@@ -7377,6 +7377,35 @@ cc_library(
         "//tensorflow/core/framework:bounds_check",
         "//third_party/eigen3",
         "@gemmlowp",
+    ],
+)
+
+tf_kernel_library(
+    name = "deepspeech_cwise_ops",
+    srcs = [
+        "cwise_op_less.cc",
+        "cwise_op_minimum.cc",
+        "cwise_op_mul_1.cc",
+        "cwise_op_squared_difference.cc",
+        "cwise_op_add_1.cc",
+        "cwise_op_add_2.cc",
+        "cwise_op_rsqrt.cc",
+        "cwise_op_sub.cc",
+    ],
+    gpu_srcs = [
+        "cwise_op_gpu_less.cu.cc",
+        "cwise_op_gpu_minimum.cu.cc",
+        "cwise_op_gpu_mul.cu.cc",
+        "cwise_op_gpu_squared_difference.cu.cc",
+        "cwise_op_gpu_add.cu.cc",
+        "cwise_op_gpu_rsqrt.cu.cc",
+        "cwise_op_gpu_sub.cu.cc",
+    ],
+    deps = [
+        ":cwise_lib",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//third_party/eigen3",
     ],
 )
 
